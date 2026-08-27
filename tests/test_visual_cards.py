@@ -116,3 +116,38 @@ def test_market_card_logs_empty_ohlc_instead_of_silently_skipping(tmp_path, capl
         path = save_quote_card(quote, tmp_path, ohlcv=pd.DataFrame())
     assert path.exists()
     assert "OHLC/candlestick" in caplog.text
+
+
+
+def test_volume_profile_card_is_mobile_png(tmp_path) -> None:
+    from nexa.market_profile import calculate_volume_profile
+    from nexa.visual_cards import save_volume_profile_card
+
+    index = pd.date_range("2026-01-01", periods=30, freq="D", tz="UTC")
+    close = pd.Series(range(100, 130), index=index, dtype=float)
+    ohlcv = pd.DataFrame(
+        {
+            "open": close - 0.5,
+            "high": close + 2,
+            "low": close - 2,
+            "close": close,
+            "volume": pd.Series(range(1_000, 31_000, 1_000), index=index, dtype=float),
+        },
+        index=index,
+    )
+    quote = Quote(
+        symbol="THYAO",
+        name="Türk Hava Yolları",
+        price=129.0,
+        change_pct=1.1,
+        volume=30_000,
+        currency="TRY",
+        as_of=None,
+        source="Yahoo Finance via yfinance",
+        delayed=True,
+    )
+    profile = calculate_volume_profile(ohlcv, bars=30, zones=5)
+    path = save_volume_profile_card("THYAO", quote, profile, tmp_path)
+    _assert_mobile_card(path)
+    with Image.open(path) as image:
+        assert image.size == (1080, 1740)

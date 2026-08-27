@@ -25,6 +25,7 @@ from .charts import save_price_chart
 from .config import Settings
 from .db import Database
 from .kap import KAPPublicClient
+from .market_profile import calculate_volume_profile
 from .providers import (
     AlternativeClient,
     BinanceClient,
@@ -56,6 +57,7 @@ from .visual_cards import (
     save_start_card,
     save_technical_card,
     save_watchlist_card,
+    save_volume_profile_card,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -769,10 +771,12 @@ async def depth_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         quote = await asyncio.to_thread(client.get_quote, symbol)
         if asset_type == "stock":
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "3mo", "1d")
+            profile = calculate_volume_profile(ohlcv, bars=30, zones=5)
             await _reply_card(
                 update.message,
-                lambda output_dir: save_depth_card(quote.symbol, "stock", output_dir, quote=quote),
-                caption=f"NEXA | {quote.symbol} BIST derinlik durumu",
+                lambda output_dir: save_volume_profile_card(quote.symbol, quote, profile, output_dir),
+                caption=f"NEXA | {quote.symbol} BIST hacim dağılımı",
             )
             return
         depth = await asyncio.to_thread(client.get_depth, symbol, 10)

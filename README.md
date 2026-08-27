@@ -48,7 +48,7 @@ Ana menüdeki BIST Hisse, Kripto, Portföy, Alarmlar, İzleme Listesi ve Yardım
 
 BIST Hisse veya doğrudan bir BIST komutu kullanıldığında Telegram’ın chat-scope komut menüsü BIST komutlarıyla güncellenir; bu listede kripto komutları bulunmaz. Kripto butonu veya kripto komutu kullanıldığında aynı sohbetin öneri listesi kripto komutlarına geçer ve BIST komutlarını göstermez. `/start` ve `/menu` tarafsız ana menüye dönerek iki alanı yeniden seçmenizi sağlar.
 
-Her iki alanda `/derinlik` komutu bulunur. Kripto tarafında bu komut Binance Spot public `/api/v3/depth` endpointinden ilk 10 gerçek alış/satış kademesini, en iyi alış-satış fiyatını, spread’i ve kademe dengesini gösterir. BIST tarafında ücretsiz/public katmanda gerçek Level 2 emir kademesi bulunmadığı için NEXA sahte veri üretmez; bunun yerine erişim sınırını ve mevcut fiyat özetini açıkça gösterir. Kaynak araştırmasının ayrıntısı `docs/market-depth-research.md` dosyasındadır.
+Her iki alanda `/derinlik` komutu bulunur. Kripto tarafında bu komut Binance Spot public `/api/v3/depth` endpointinden ilk 10 gerçek alış/satış kademesini, en iyi alış-satış fiyatını, spread’i ve kademe dengesini gösterir. BIST tarafında ücretsiz/public katmanda gerçek Level 2 emir kademesi bulunmadığı için NEXA sahte veri üretmez; bunun yerine son 30 OHLCV barından Son İşlem Hacmi Dağılımı kartı üretir. Kart; toplam ve ortalama hacmi, yükselen/düşen mum hacmini, son bar hacmini, son bar akış çubuklarını ve tipik fiyat bazlı yaklaşık hacim bölgelerini gösterir. Bu bölgeler gerçek emir kademesi değil, açıkça etiketlenmiş bir OHLCV proxy analizidir. Kaynak araştırmasının ayrıntısı `docs/market-depth-research.md` dosyasındadır.
 
 ## Test
 

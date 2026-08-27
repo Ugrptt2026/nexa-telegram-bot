@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from .formatting import date_text, number, signed_pct
 from .providers import DepthSnapshot, FearGreed, Quote
+from .market_profile import VolumeProfile
 from .technical_analysis import TechnicalSnapshot
 
 # The cards are deliberately portrait-oriented and high-resolution so Telegram can
@@ -977,6 +978,88 @@ def save_depth_card(
     draw_side(right_x, depth.asks, RED, RED_TINT, "MİKTAR")
     _footer(draw, height, depth.source, depth.note or "Public emir defteri; yatırım tavsiyesi değildir.")
     return _save(image, output_dir, f"depth_{asset_type}_{symbol.lower()}")
+
+
+def save_volume_profile_card(symbol: str, quote: Quote, profile: VolumeProfile, output_dir: Path) -> Path:
+    """BIST için OHLCV tabanlı, gerçek emir defteri olmayan hacim dağılımı kartı."""
+    height = 1740
+    image, draw, y = _base("BIST HACİM DAĞILIMI", f"{symbol.upper()}  ·  Son {profile.period_bars} OHLCV barı", height=height)
+
+    _panel(draw, (56, y, WIDTH - 56, y + 138), fill=PANEL_ALT, outline=BORDER, radius=24)
+    draw.ellipse((84, y + 31, 146, y + 93), fill=GREEN_TINT, outline=GREEN, width=2)
+    draw.text((104, y + 43), "V", font=_font(27, bold=True), fill=GREEN)
+    draw.text((176, y + 27), symbol.upper(), font=_font(30, bold=True), fill=GREEN)
+    draw.text((176, y + 70), "Yahoo Finance OHLCV", font=_font(19), fill=MUTED)
+    badge = "GERÇEK HACİM"
+    badge_font = _font(17, bold=True)
+    badge_width = _text_width(draw, badge, badge_font) + 28
+    draw.rounded_rectangle((WIDTH - 86 - badge_width, y + 42, WIDTH - 86, y + 78), radius=18, fill=GREEN_DARK, outline=GREEN, width=2)
+    draw.text((WIDTH - 72 - badge_width, y + 51), badge, font=badge_font, fill=GREEN)
+    y += 158
+
+    metric_width = (WIDTH - 112 - 24) // 3
+    _metric(draw, (56, y, 56 + metric_width, y + 112), "TOPLAM HACİM", _compact(profile.total_volume), GREEN, 25, fill=GREEN_TINT, label_fill=GREEN)
+    _metric(draw, (68 + metric_width, y, 68 + metric_width * 2, y + 112), "ORT. BAR HACMİ", _compact(profile.average_volume), CYAN, 24, fill=PANEL)
+    _metric(draw, (80 + metric_width * 2, y, WIDTH - 56, y + 112), "SON BAR", _compact(profile.latest_volume), ORANGE, 24, fill=PANEL)
+    y += 140
+
+    draw.text((56, y), "MUM YÖNÜNE GÖRE HACİM", font=_font(23, bold=True), fill=GREEN)
+    y += 42
+    direction_width = (WIDTH - 112 - 20) // 2
+    up_pct = profile.up_volume / profile.total_volume * 100 if profile.total_volume else 0.0
+    down_pct = profile.down_volume / profile.total_volume * 100 if profile.total_volume else 0.0
+    up_box = (56, y, 56 + direction_width, y + 118)
+    down_box = (76 + direction_width, y, WIDTH - 56, y + 118)
+    _metric(draw, up_box, "YÜKSELEN MUM HACMİ", f"{_compact(profile.up_volume)}  ·  %{up_pct:.1f}".replace(".", ","), GREEN, 22, fill=GREEN_TINT, label_fill=GREEN)
+    _metric(draw, down_box, "DÜŞEN MUM HACMİ", f"{_compact(profile.down_volume)}  ·  %{down_pct:.1f}".replace(".", ","), RED, 22, fill=RED_TINT, label_fill=RED)
+    y += 146
+    # Flat volume is kept separate; candle direction is only a bar-level proxy.
+    draw.text((56, y), f"Yatay mum hacmi: {_compact(profile.flat_volume)}  ·  Son bar / ortalama: {signed_pct(profile.latest_vs_average_pct)}", font=_font(18), fill=MUTED)
+    y += 42
+
+    draw.text((56, y), "SON BARLARIN HACİM AKIŞI", font=_font(23, bold=True), fill=GREEN)
+    y += 42
+    chart_top = y
+    chart_bottom = y + 272
+    _panel(draw, (56, chart_top, WIDTH - 56, chart_bottom), fill=PANEL, outline=BORDER, radius=22)
+    bars = profile.recent_bars[-24:]
+    max_volume = max((bar.volume for bar in bars), default=1.0)
+    bar_slot = (WIDTH - 152) / max(1, len(bars))
+    for index, bar in enumerate(bars):
+        bar_height = max(5, int((bar.volume / max_volume) * 188))
+        x0 = int(76 + index * bar_slot)
+        x1 = int(x0 + max(8, bar_slot - 6))
+        color = GREEN if bar.direction == "up" else RED if bar.direction == "down" else GOLD
+        draw.rounded_rectangle((x0, chart_bottom - 38 - bar_height, x1, chart_bottom - 38), radius=5, fill=color)
+    draw.line((76, chart_bottom - 38, WIDTH - 76, chart_bottom - 38), fill=BORDER, width=2)
+    if bars:
+        draw.text((76, chart_bottom - 30), bars[0].label, font=_font(15), fill=MUTED)
+        last_label = bars[-1].label
+        label_width = _text_width(draw, last_label, _font(15))
+        draw.text((WIDTH - 76 - label_width, chart_bottom - 30), last_label, font=_font(15), fill=MUTED)
+    draw.text((76, chart_top + 20), "Yeşil: kapanış > açılış", font=_font(16), fill=GREEN)
+    draw.text((76, chart_top + 48), "Kırmızı: kapanış < açılış", font=_font(16), fill=RED)
+    y = chart_bottom + 32
+
+    draw.text((56, y), "YAKLAŞIK FİYAT BÖLGESİ HACMİ", font=_font(23, bold=True), fill=GREEN)
+    y += 42
+    draw.text((56, y), "Tipik fiyat (H+L+C)/3 bazlı proxy dağılım", font=_font(17), fill=MUTED)
+    y += 34
+    max_share = max((zone.share_pct for zone in profile.zones), default=1.0)
+    for zone in reversed(profile.zones):
+        row_height = 62
+        _panel(draw, (56, y, WIDTH - 56, y + row_height), fill=PANEL_ALT, outline=BORDER, radius=15)
+        range_text = f"{number(zone.low)} – {number(zone.high)}"
+        draw.text((78, y + 13), range_text, font=_font(19, bold=True), fill=TEXT)
+        share_text = f"%{zone.share_pct:.1f}".replace(".", ",")
+        share_width = _text_width(draw, share_text, _font(19, bold=True))
+        draw.text((WIDTH - 78 - share_width, y + 13), share_text, font=_font(19, bold=True), fill=CYAN)
+        bar_width = int((WIDTH - 220) * min(1.0, zone.share_pct / max_share)) if max_share else 0
+        draw.rounded_rectangle((78, y + 43, 78 + bar_width, y + 51), radius=4, fill=CYAN)
+        y += row_height + 10
+
+    _footer(draw, height, "Yahoo Finance via yfinance", "OHLCV hacim analizi; gerçek emir defteri değildir.")
+    return _save(image, output_dir, f"volume_profile_{symbol.lower()}")
 
 
 def save_notice_card(

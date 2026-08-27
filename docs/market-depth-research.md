@@ -13,6 +13,6 @@ BIST kartında gerçek ücretsiz kaynaklardan gelen mevcut fiyat, hacim, gün i�
 | Bölüm | Ücretsiz/public veri | NEXA kartı |
 |---|---|---|
 | KRİPTO | Binance Spot `/api/v3/depth`, 10 alış + 10 satış kademesi | Gerçek emir defteri; alış/satış renkleri, toplam miktar, spread ve dengesizlik |
-| BIST | Yahoo/yfinance fiyat ve OHLC; resmi Level 2 endpointi yok | “Derinlik yerine fiyat özeti” olarak açık etiketli görünüm; sahte kademe yok |
+| BIST | Yahoo/yfinance fiyat, OHLC ve son bar hacimleri; resmi Level 2 endpointi yok | `/derinlik` içinde Son İşlem Hacmi Dağılımı: gerçek bar hacmi, mum yönü ve yaklaşık fiyat bölgeleri; sahte kademe yok |
 
-Bu ayrım, fiyat özeti ile gerçek emir defteri verisinin karıştırılmasını önler. BIST’te emir kademesi verisi elde edilemediği sürece kartta “gerçek Level 2 mevcut değil” notu açıkça gösterilecektir.
+Bu ayrım, fiyat özeti ile gerçek emir defteri verisinin karıştırılmasını önler. BIST’te emir kademesi verisi elde edilemediği için `/derinlik THYAO` kartı artık son OHLCV barlarının hacim dağılımını gösterir. Yükselen/düşen mum hacimleri gerçek bar hacmidir; yaklaşık fiyat bölgeleri tipik fiyat `(High + Low + Close) / 3` ile bar hacmini gruplayan bir proxy’dir. Kartta “OHLCV hacim analizi; gerçek emir defteri değildir” notu açıkça gösterilir.
