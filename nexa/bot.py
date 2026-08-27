@@ -5,10 +5,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+
+import pandas as pd
 from pathlib import Path
+from typing import Any, Callable
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -21,17 +23,7 @@ from .alerts import parse_alarm_condition, parse_asset_type
 from .charts import save_price_chart
 from .config import Settings
 from .db import Database
-from .formatting import (
-    format_alarms,
-    format_crypto_quote,
-    format_daily_summary,
-    format_fundamentals,
-    format_portfolio,
-    format_quote,
-    format_watchlist,
-    number,
-)
-from .kap import KAPPublicClient, format_disclosures
+from .kap import KAPPublicClient
 from .providers import (
     AlternativeClient,
     BinanceClient,
@@ -43,10 +35,26 @@ from .providers import (
     normalize_bist_symbol,
     normalize_binance_symbol,
 )
-from .scanner import format_movers, scan_bist_symbols, scan_crypto_movers
+from .scanner import scan_bist_symbols, scan_crypto_movers
 from .scheduler import check_active_alarms, check_kap_updates
-from .technical_analysis import calculate_indicators, snapshot_to_text
-from .texts import HELP_TEXT, MENU_LABELS, START_TEXT
+from .technical_analysis import calculate_indicators
+from .texts import MENU_LABELS
+from .visual_cards import (
+    save_alarms_card,
+    save_daily_summary_card,
+    save_fear_greed_card,
+    save_fundamentals_card,
+    save_global_market_card,
+    save_help_card,
+    save_kap_card,
+    save_movers_card,
+    save_notice_card,
+    save_portfolio_card,
+    save_quote_card,
+    save_start_card,
+    save_technical_card,
+    save_watchlist_card,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -76,6 +84,35 @@ def back_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+async def _reply_card(
+    target: Any,
+    builder: Callable[[Path], Path],
+    caption: str = "NEXA | Ücretsiz veri katmanı",
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    """Kartı sohbet bazlı geçici dizinde üretip Telegram fotoğrafı olarak gönderir."""
+    chat_id = getattr(target, "chat_id", None) or getattr(getattr(target, "chat", None), "id", "unknown")
+    output_dir = Path("/tmp/nexa_cards") / str(chat_id)
+    path = await asyncio.to_thread(builder, output_dir)
+    with path.open("rb") as photo:
+        await target.reply_photo(photo=photo, caption=caption, reply_markup=reply_markup)
+
+
+async def _reply_notice(
+    update: Update,
+    title: str,
+    message: str,
+    slug: str = "notice_card",
+    accent: str = "#57E389",
+) -> None:
+    if update.message:
+        await _reply_card(
+            update.message,
+            lambda output_dir: save_notice_card(title, message, output_dir, slug=slug, accent=accent),
+            caption="NEXA",
+        )
+
+
 def canonical_symbol(asset_type: str, symbol: str) -> str:
     cleaned = symbol.strip().upper()
     if asset_type == "stock":
@@ -103,27 +140,31 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         first_name=user.first_name,
     )
     name = user.first_name or user.username or "kullanıcı"
-    await update.message.reply_text(
-        START_TEXT.format(name=name),
-        parse_mode=ParseMode.HTML,
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_start_card(name, output_dir),
+        caption="NEXA | Borsa & Kripto",
         reply_markup=main_menu(),
     )
 
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
-        await update.message.reply_text(
-            HELP_TEXT,
-            parse_mode=ParseMode.HTML,
+        await _reply_card(
+            update.message,
+            save_help_card,
+            caption="NEXA | Komut rehberi",
             reply_markup=main_menu(),
         )
 
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
-        await update.message.reply_text(
-            "<b>Nexa ana menüsü</b>",
-            parse_mode=ParseMode.HTML,
+        name = update.effective_user.first_name if update.effective_user else "kullanıcı"
+        await _reply_card(
+            update.message,
+            lambda output_dir: save_start_card(name or "kullanıcı", output_dir),
+            caption="NEXA | Ana menü",
             reply_markup=main_menu(),
         )
 
@@ -138,9 +179,12 @@ async def _reply_quote(
     if not context.args:
         example = "THYAO" if asset_type == "stock" else "BTC"
         command = "hisse" if asset_type == "stock" else "kripto"
-        await update.message.reply_text(
-            f"Kullanım: <code>/{command} {example}</code>",
-            parse_mode=ParseMode.HTML,
+        await _reply_notice(
+            update,
+            "KOMUT KULLANIMI",
+            f"Kullanım: /{command} {example}",
+            slug=f"usage_{command}",
+            accent="#F3C76B",
         )
         return
 
@@ -152,15 +196,22 @@ async def _reply_quote(
             client = context.application.bot_data["binance"]
         quote = await asyncio.to_thread(client.get_quote, symbol)
     except (MarketDataError, ValueError) as exc:
-        await update.message.reply_text(
-            f"<b>{symbol}</b> için veri alınamadı.\n\n{exc}",
-            parse_mode=ParseMode.HTML,
+        await _reply_notice(
+            update,
+            "VERİ ALINAMADI",
+            f"{symbol} için veri alınamadı. {exc}",
+            slug=f"quote_error_{asset_type}",
+            accent="#FF747D",
         )
         return
     except Exception:
         LOGGER.exception("%s sorgusunda beklenmeyen hata: %s", asset_type, symbol)
-        await update.message.reply_text(
-            "Veri sağlayıcısı geçici olarak yanıt vermedi. Lütfen biraz sonra tekrar deneyin."
+        await _reply_notice(
+            update,
+            "GEÇİCİ SAĞLAYICI HATASI",
+            "Veri sağlayıcısı şu anda yanıt vermedi. Lütfen biraz sonra tekrar deneyin.",
+            slug=f"provider_error_{asset_type}",
+            accent="#FF747D",
         )
         return
 
@@ -175,31 +226,46 @@ async def _reply_quote(
                 )
             except MarketDataError:
                 LOGGER.info("CoinGecko coin özeti alınamadı: %s", quote.symbol)
-    response = format_crypto_quote(quote, snapshot) if asset_type == "crypto" else format_quote(quote)
-    await update.message.reply_text(response, parse_mode=ParseMode.HTML)
+    ohlcv = None
+    try:
+        if asset_type == "stock":
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "3mo", "1d")
+        else:
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "1d", 60)
+    except Exception:
+        LOGGER.info("Piyasa kartı mini grafiği alınamadı: %s", quote.symbol)
+
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_quote_card(quote, output_dir, snapshot=snapshot, ohlcv=ohlcv),
+        caption=f"NEXA | {quote.symbol} piyasa kartı",
+    )
 
 
 async def technical_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
     if len(context.args) != 2:
-        await update.message.reply_text(
-            "Kullanım: <code>/teknik hisse THYAO</code> veya <code>/teknik kripto BTC</code>",
-            parse_mode=ParseMode.HTML,
-        )
+        await _reply_notice(update, "KOMUT KULLANIMI", "Kullanım: /teknik hisse THYAO veya /teknik kripto BTC", slug="usage_teknik", accent="#F3C76B")
         return
     try:
         asset_type = parse_asset_type(context.args[0])
         symbol = canonical_symbol(asset_type, context.args[1])
         client = context.application.bot_data["bist" if asset_type == "stock" else "binance"]
-        ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "6mo", "1d")
+        if asset_type == "stock":
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "6mo", "1d")
+        else:
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "1d", 180)
         snapshot = calculate_indicators(ohlcv)
     except (MarketDataError, ValueError) as exc:
-        await update.message.reply_text(f"Teknik analiz alınamadı: {exc}")
+        await _reply_notice(update, "TEKNİK VERİ ALINAMADI", str(exc), slug="technical_error", accent="#FF747D")
         return
-    await update.message.reply_text(
-        f"<b>{symbol}</b>\n{snapshot_to_text(snapshot, number)}",
-        parse_mode=ParseMode.HTML,
+    closes = ohlcv.get("close", pd.Series(dtype=float)).dropna()
+    last_price = float(closes.iloc[-1]) if not closes.empty else None
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_technical_card(symbol, snapshot, output_dir, last_price=last_price, source="NEXA ücretsiz veri katmanı"),
+        caption=f"NEXA | {symbol} teknik analiz",
     )
 
 
@@ -207,29 +273,29 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not update.message:
         return
     if len(context.args) != 2:
-        await update.message.reply_text(
-            "Kullanım: <code>/grafik hisse THYAO</code> veya <code>/grafik kripto BTC</code>",
-            parse_mode=ParseMode.HTML,
-        )
+        await _reply_notice(update, "KOMUT KULLANIMI", "Kullanım: /grafik hisse THYAO veya /grafik kripto BTC", slug="usage_grafik", accent="#F3C76B")
         return
     try:
         asset_type = parse_asset_type(context.args[0])
         symbol = canonical_symbol(asset_type, context.args[1])
         client = context.application.bot_data["bist" if asset_type == "stock" else "binance"]
-        ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "6mo", "1d")
+        if asset_type == "stock":
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "6mo", "1d")
+        else:
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "1d", 180)
         chart_path = await asyncio.to_thread(
             save_price_chart,
             ohlcv,
-            f"Nexa — {symbol} fiyat grafiği",
+            f"NEXA | {symbol} fiyat grafiği",
             Path("/tmp") / "nexa_charts" / str(update.effective_chat.id if update.effective_chat else "unknown"),
         )
     except (MarketDataError, ValueError) as exc:
-        await update.message.reply_text(f"Grafik üretilemedi: {exc}")
+        await _reply_notice(update, "GRAFİK ÜRETİLEMEDİ", str(exc), slug="chart_error", accent="#FF747D")
         return
     with chart_path.open("rb") as photo:
         await update.message.reply_photo(
             photo=photo,
-            caption=f"{symbol} — kapanış, MA20 ve MA50\nKaynak: {getattr(ohlcv, 'source', 'Nexa ücretsiz veri katmanı')}",
+            caption=f"NEXA | {symbol} fiyat grafiği",
         )
 
 
@@ -237,15 +303,19 @@ async def fundamentals_command(update: Update, context: ContextTypes.DEFAULT_TYP
     if not update.message:
         return
     if len(context.args) != 1:
-        await update.message.reply_text("Kullanım: <code>/temel THYAO</code>", parse_mode=ParseMode.HTML)
+        await _reply_notice(update, "KOMUT KULLANIMI", "Kullanım: /temel THYAO", slug="usage_temel", accent="#F3C76B")
         return
     try:
         symbol = canonical_symbol("stock", context.args[0])
         data = await asyncio.to_thread(context.application.bot_data["bist"].get_fundamentals, symbol)
     except (MarketDataError, ValueError) as exc:
-        await update.message.reply_text(f"Temel oranlar alınamadı: {exc}")
+        await _reply_notice(update, "TEMEL VERİ ALINAMADI", str(exc), slug="fundamentals_error", accent="#FF747D")
         return
-    await update.message.reply_text(format_fundamentals(data), parse_mode=ParseMode.HTML)
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_fundamentals_card(data, output_dir),
+        caption=f"NEXA | {data.get('symbol', 'BIST')} temel oranlar",
+    )
 
 
 async def crypto_market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -254,11 +324,13 @@ async def crypto_market_command(update: Update, context: ContextTypes.DEFAULT_TY
     try:
         data = await asyncio.to_thread(context.application.bot_data["coingecko"].get_global)
     except MarketDataError as exc:
-        await update.message.reply_text(f"Kripto piyasa özeti alınamadı: {exc}")
+        await _reply_notice(update, "PİYASA ÖZETİ ALINAMADI", str(exc), slug="market_error", accent="#FF747D")
         return
-    from .formatting import format_global_market
-
-    await update.message.reply_text(format_global_market(data), parse_mode=ParseMode.HTML)
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_global_market_card(data, output_dir),
+        caption="NEXA | Kripto piyasa özeti",
+    )
 
 
 async def fear_greed_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -267,11 +339,13 @@ async def fear_greed_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         index = await asyncio.to_thread(context.application.bot_data["alternative"].get_fear_greed)
     except MarketDataError as exc:
-        await update.message.reply_text(f"Fear & Greed alınamadı: {exc}")
+        await _reply_notice(update, "FEAR & GREED ALINAMADI", str(exc), slug="fng_error", accent="#FF747D")
         return
-    from .formatting import format_fear_greed
-
-    await update.message.reply_text(format_fear_greed(index), parse_mode=ParseMode.HTML)
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_fear_greed_card(index, output_dir),
+        caption="NEXA | Fear & Greed",
+    )
 
 
 async def scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -282,7 +356,7 @@ async def scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         try:
             asset_type = parse_asset_type(context.args[0])
         except ValueError as exc:
-            await update.message.reply_text(str(exc))
+            await _reply_notice(update, "KOMUT KULLANIMI", str(exc), slug="scan_usage", accent="#F3C76B")
             return
     try:
         if asset_type == "crypto":
@@ -293,9 +367,14 @@ async def scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             result = await asyncio.to_thread(scan_bist_symbols, context.application.bot_data["bist"], symbols, 10)
     except Exception:
         LOGGER.exception("Tarama başarısız")
-        await update.message.reply_text("Tarama geçici olarak başarısız oldu; sağlayıcı limitini veya erişimi kontrol edin.")
+        await _reply_notice(update, "TARAMA BAŞARISIZ", "Tarama geçici olarak başarısız oldu; sağlayıcı limitini veya erişimi kontrol edin.", slug="scan_error", accent="#FF747D")
         return
-    await update.message.reply_text(format_movers(result, number), parse_mode=ParseMode.HTML)
+    label = "KRİPTO" if asset_type == "crypto" else "BIST"
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_movers_card(result, output_dir, asset_label=label),
+        caption=f"NEXA | {label} tarama",
+    )
 
 
 async def daily_summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -310,9 +389,13 @@ async def daily_summary_command(update: Update, context: ContextTypes.DEFAULT_TY
         except (MarketDataError, ValueError):
             LOGGER.info("Günlük özet için veri yok: %s", symbol)
     if not items:
-        await update.message.reply_text("Günlük piyasa özeti alınamadı.")
+        await _reply_notice(update, "GÜNLÜK ÖZET ALINAMADI", "Piyasa verileri şu anda okunamadı; lütfen daha sonra tekrar deneyin.", slug="summary_error", accent="#FF747D")
         return
-    await update.message.reply_text(format_daily_summary(items), parse_mode=ParseMode.HTML)
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_daily_summary_card(items, output_dir),
+        caption="NEXA | Günlük piyasa özeti",
+    )
 
 
 async def macro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -322,9 +405,13 @@ async def macro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     try:
         quote = await asyncio.to_thread(context.application.bot_data["macro"].get_quote, symbol)
     except (MarketDataError, ValueError) as exc:
-        await update.message.reply_text(f"Endeks/kur verisi alınamadı: {exc}")
+        await _reply_notice(update, "MAKRO VERİ ALINAMADI", str(exc), slug="macro_error", accent="#FF747D")
         return
-    await update.message.reply_text(format_quote(quote), parse_mode=ParseMode.HTML)
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_quote_card(quote, output_dir),
+        caption=f"NEXA | {quote.symbol} piyasa kartı",
+    )
 
 
 async def kap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -334,11 +421,13 @@ async def kap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         disclosures = await asyncio.to_thread(context.application.bot_data["kap"].fetch_recent_disclosures, 20)
     except Exception:
         LOGGER.exception("KAP public sayfa gözlemi başarısız")
-        await update.message.reply_text("KAP public sayfası şu anda okunamadı.")
+        await _reply_notice(update, "KAP OKUNAMADI", "KAP public sayfası şu anda okunamadı; daha sonra tekrar deneyin.", slug="kap_error", accent="#FF747D")
         return
-    from .kap import format_disclosures
-
-    await update.message.reply_text(format_disclosures(disclosures), parse_mode=ParseMode.HTML)
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_kap_card(disclosures, output_dir),
+        caption="NEXA | KAP bildirimleri",
+    )
 
 
 async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -360,7 +449,7 @@ async def alarm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         "<code>/alarm sil 12</code>"
     )
     if not context.args:
-        await update.message.reply_text(usage, parse_mode=ParseMode.HTML)
+        await _reply_notice(update, "ALARM KULLANIMI", "/alarm ekle hisse THYAO ust 350\n/alarm liste\n/alarm sil 12", slug="alarm_usage", accent="#F3C76B")
         return
 
     db: Database = context.application.bot_data["db"]
@@ -369,19 +458,21 @@ async def alarm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     action = context.args[0].lower()
     if action == "liste":
-        await update.message.reply_text(format_alarms(db.list_alarms(chat_id, active_only=True)), parse_mode=ParseMode.HTML)
+        items = db.list_alarms(chat_id, active_only=True)
+        await _reply_card(update.message, lambda output_dir: save_alarms_card(items, output_dir), caption="NEXA | Aktif alarmlar")
         return
     if action == "sil" and len(context.args) == 2:
         try:
             alarm_id = int(context.args[1])
         except ValueError:
-            await update.message.reply_text("Alarm numarası tam sayı olmalı.")
+            await _reply_notice(update, "ALARM SİLİNEMEDİ", "Alarm numarası tam sayı olmalı.", slug="alarm_delete_error", accent="#FF747D")
             return
-        removed = db.deactivate_alarm(alarm_id, chat_id=chat_id)
-        await update.message.reply_text("Alarm kapatıldı." if removed else "Aktif alarm bulunamadı.")
+        db.deactivate_alarm(alarm_id, chat_id=chat_id)
+        items = db.list_alarms(chat_id, active_only=True)
+        await _reply_card(update.message, lambda output_dir: save_alarms_card(items, output_dir), caption="NEXA | Alarm listesi")
         return
     if action != "ekle" or len(context.args) != 5:
-        await update.message.reply_text(usage, parse_mode=ParseMode.HTML)
+        await _reply_notice(update, "ALARM KULLANIMI", "/alarm ekle hisse THYAO ust 350 veya /alarm ekle kripto BTC degisim 5", slug="alarm_usage", accent="#F3C76B")
         return
 
     try:
@@ -393,14 +484,11 @@ async def alarm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             raise ValueError("Eşik sıfırdan büyük olmalı")
         alarm_id = db.add_alarm(chat_id, asset_type, symbol, condition, target)
     except ValueError as exc:
-        await update.message.reply_text(f"Alarm oluşturulamadı: {exc}")
+        await _reply_notice(update, "ALARM OLUŞTURULAMADI", str(exc), slug="alarm_create_error", accent="#FF747D")
         return
 
-    condition_text = {"above": "üstü", "below": "altı", "change_pct": "mutlak değişim"}[condition]
-    suffix = "%" if condition == "change_pct" else ""
-    await update.message.reply_text(
-        f"Alarm #{alarm_id} oluşturuldu: {symbol} için {condition_text} {target:g}{suffix}."
-    )
+    items = db.list_alarms(chat_id, active_only=True)
+    await _reply_card(update.message, lambda output_dir: save_alarms_card(items, output_dir), caption=f"NEXA | Alarm #{alarm_id} oluşturuldu")
 
 
 async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -412,26 +500,24 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     db: Database = context.application.bot_data["db"]
     args = context.args
     if not args or args[0].lower() == "liste":
-        await update.message.reply_text(format_watchlist(db.list_watches(chat_id)), parse_mode=ParseMode.HTML)
+        items = db.list_watches(chat_id)
+        await _reply_card(update.message, lambda output_dir: save_watchlist_card(items, output_dir), caption="NEXA | İzleme listesi")
         return
     if len(args) != 3 or args[0].lower() not in {"ekle", "sil"}:
-        await update.message.reply_text(
-            "Kullanım: <code>/izleme ekle hisse THYAO</code> veya <code>/izleme sil kripto BTC</code>",
-            parse_mode=ParseMode.HTML,
-        )
+        await _reply_notice(update, "İZLEME KULLANIMI", "/izleme ekle hisse THYAO veya /izleme sil kripto BTC", slug="watch_usage", accent="#F3C76B")
         return
     try:
         asset_type = parse_asset_type(args[1])
         symbol = canonical_symbol(asset_type, args[2])
     except ValueError as exc:
-        await update.message.reply_text(f"İzleme işlemi başarısız: {exc}")
+        await _reply_notice(update, "İZLEME İŞLEMİ BAŞARISIZ", str(exc), slug="watch_error", accent="#FF747D")
         return
     if args[0].lower() == "ekle":
         db.add_watch(chat_id, asset_type, symbol)
-        await update.message.reply_text(f"{symbol} izleme listenize eklendi.")
     else:
-        removed = db.remove_watch(chat_id, asset_type, symbol)
-        await update.message.reply_text("İzleme listesinden çıkarıldı." if removed else "Kayıt bulunamadı.")
+        db.remove_watch(chat_id, asset_type, symbol)
+    items = db.list_watches(chat_id)
+    await _reply_card(update.message, lambda output_dir: save_watchlist_card(items, output_dir), caption=f"NEXA | {symbol} izleme listesi")
 
 
 async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -445,17 +531,14 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if not args:
         positions = db.portfolio_positions(chat_id)
         current_quotes = await _fetch_position_quotes(context, positions)
-        await update.message.reply_text(
-            format_portfolio(positions, current_quotes),
-            parse_mode=ParseMode.HTML,
+        await _reply_card(
+            update.message,
+            lambda output_dir: save_portfolio_card(positions, current_quotes, output_dir),
+            caption="NEXA | Sanal portföy",
         )
         return
     if len(args) != 5 or args[0].lower() not in {"al", "sat"}:
-        await update.message.reply_text(
-            "Kullanım: <code>/portfoy al hisse THYAO 10 300</code>\n"
-            "Satış için ilk kelimeyi <code>sat</code> yapın.",
-            parse_mode=ParseMode.HTML,
-        )
+        await _reply_notice(update, "PORTFÖY KULLANIMI", "/portfoy al hisse THYAO 10 300\nSatış için ilk kelimeyi sat yapın.", slug="portfolio_usage", accent="#F3C76B")
         return
     try:
         side = "buy" if args[0].lower() == "al" else "sell"
@@ -468,9 +551,15 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         currency = "TRY" if asset_type == "stock" else "USDT"
         db.add_transaction(chat_id, asset_type, symbol, side, quantity, price, currency)
     except ValueError as exc:
-        await update.message.reply_text(f"Portföy işlemi başarısız: {exc}")
+        await _reply_notice(update, "PORTFÖY İŞLEMİ BAŞARISIZ", str(exc), slug="portfolio_error", accent="#FF747D")
         return
-    await update.message.reply_text(f"Sanal portföye işlendi: {symbol}, {quantity:g} adet, {price:g} {currency}.")
+    positions = db.portfolio_positions(chat_id)
+    current_quotes = await _fetch_position_quotes(context, positions)
+    await _reply_card(
+        update.message,
+        lambda output_dir: save_portfolio_card(positions, current_quotes, output_dir),
+        caption=f"NEXA | {symbol} portföye işlendi",
+    )
 
 
 async def _fetch_position_quotes(context: ContextTypes.DEFAULT_TYPE, positions: list[dict]) -> dict[tuple[str, str], object]:
@@ -493,25 +582,31 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     await query.answer()
     key = (query.data or "").split(":", maxsplit=1)[-1]
 
+    if not query.message:
+        return
     if key == "home":
-        await query.edit_message_text(
-            "<b>Nexa ana menüsü</b>",
-            parse_mode=ParseMode.HTML,
+        name = update.effective_user.first_name if update.effective_user else "kullanıcı"
+        await _reply_card(
+            query.message,
+            lambda output_dir: save_start_card(name or "kullanıcı", output_dir),
+            caption="NEXA | Ana menü",
             reply_markup=main_menu(),
         )
         return
     if key == "help":
-        await query.edit_message_text(
-            HELP_TEXT,
-            parse_mode=ParseMode.HTML,
+        await _reply_card(
+            query.message,
+            save_help_card,
+            caption="NEXA | Komut rehberi",
             reply_markup=back_keyboard(),
         )
         return
 
-    label = MENU_LABELS.get(key, "Nexa")
-    await query.edit_message_text(
-        f"<b>{label}</b>\n\nBu bölümde komutları kullanabilirsiniz.",
-        parse_mode=ParseMode.HTML,
+    label = MENU_LABELS.get(key, "NEXA")
+    await _reply_card(
+        query.message,
+        lambda output_dir: save_notice_card(label.upper(), f"Bu bölüm için ilgili komutları kullanabilirsiniz. /yardim ile tüm komutları görün.", output_dir, slug=f"menu_{key}"),
+        caption=f"NEXA | {label}",
         reply_markup=back_keyboard(),
     )
 

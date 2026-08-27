@@ -1,35 +1,33 @@
-"""Kullanıcıya gösterilen Türkçe metinler."""
+START_TEXT = """Merhaba {name}, ben <b>NEXA</b>.
 
-START_TEXT = """Merhaba {name}, ben <b>Nexa</b>.
+BIST ve kripto piyasalarını ücretsiz veri kaynaklarıyla takip etmenize yardımcı olurum. Fiyatlar bazı kaynaklarda gecikmeli olabilir; NEXA yatırım tavsiyesi vermez ve emir iletmez.
 
-BIST ve kripto piyasalarını ücretsiz veri kaynaklarıyla takip etmenize yardımcı olurum. Fiyatlar bazı kaynaklarda gecikmeli olabilir; Nexa yatırım tavsiyesi vermez ve emir iletmez.
+Başlamak için görsel menüyü kullanın veya /yardim komutunu yazın."""
 
-Başlamak için aşağıdaki menüyü kullanın veya /yardim komutunu yazın."""
-
-HELP_TEXT = """<b>Nexa komutları</b>
+HELP_TEXT = """<b>NEXA komutları</b>
 
 <b>Piyasa</b>
-/hisse THYAO — BIST hisse sorgusu
-/kripto BTC — kripto varlık sorgusu
-/endeks XU100 — BIST 30/100, döviz veya altın
-/ozet — endeks, kur ve altın açılış/kapanış özeti
-/piyasa — kripto piyasa değeri, hacim ve dominans
-/fng — Crypto Fear &amp; Greed Index
-/teknik hisse THYAO — RSI, MACD, MA, destek/direnç
-/grafik kripto BTC — fiyat grafiği
-/temel THYAO — F/K, PD/DD, temettü verimi
-/tara kripto — en çok yükselen/düşenler
+/hisse THYAO — BIST hisse kartı
+/kripto BTC — kripto varlık kartı
+/endeks XU100 — BIST 30/100, döviz veya altın kartı
+/ozet — endeks, kur ve altın özeti
+/piyasa — kripto piyasa kartı
+/fng — Fear &amp; Greed kartı
+/teknik hisse THYAO — teknik analiz kartı
+/grafik kripto BTC — NEXA fiyat grafiği
+/temel THYAO — temel oran kartı
+/tara kripto — yükselen/düşen kartı
 /tara hisse — tanımlı BIST evreni taraması
 /kap — public KAP sayfa gözlemi
 
 <b>Kişisel araçlar</b>
-/portfoy — sanal portföy
-/alarm — fiyat/değişim alarmı
-/izleme — izleme listeniz
+/portfoy — sanal portföy kartı
+/alarm — fiyat/değişim alarm kartı
+/izleme — izleme listesi kartı
 
 <b>Genel</b>
-/start — başlangıç menüsü
-/yardim — bu yardım metni
+/start — NEXA başlangıç kartı
+/yardim — bu komut kartı
 
 Örnekler:
 <code>/alarm ekle hisse THYAO ust 350</code>
