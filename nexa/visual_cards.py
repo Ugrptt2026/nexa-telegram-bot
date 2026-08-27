@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
@@ -201,11 +202,26 @@ def _metric(
     draw.text((x + 24, y + 55), value, font=value_font, fill=accent)
 
 
+def _hex_rgb(value: str) -> tuple[int, int, int]:
+    value = value.lstrip("#")
+    return tuple(int(value[index : index + 2], 16) for index in (0, 2, 4))
+
+
+def _mix(first: str, second: str, amount: float) -> str:
+    a = _hex_rgb(first)
+    b = _hex_rgb(second)
+    amount = max(0.0, min(1.0, amount))
+    rgb = tuple(round(x + (y - x) * amount) for x, y in zip(a, b))
+    return "#%02X%02X%02X" % rgb
+
+
 def _draw_sparkline(
+    image: Image.Image,
     draw: ImageDraw.ImageDraw,
     box: tuple[int, int, int, int],
     values: Iterable[float],
     color: str = GREEN,
+    last_label: str | None = None,
 ) -> None:
     points = [float(value) for value in values if value is not None]
     if len(points) < 2:
@@ -220,10 +236,77 @@ def _draw_sparkline(
         x = int(left + (right - left) * index / (len(points) - 1))
         y = int(bottom - (bottom - top) * (value - minimum) / span)
         mapped.append((x, y))
+
+    # Gradient dolgu: çizginin altını yön rengine doğru neonlaştırır.
     fill_points = [(mapped[0][0], bottom), *mapped, (mapped[-1][0], bottom)]
-    draw.polygon(fill_points, fill="#12342F")
+    mask = Image.new("L", image.size, 0)
+    mask_draw = ImageDraw.Draw(mask)
+    mask_draw.polygon(fill_points, fill=255)
+    gradient = Image.new("RGB", image.size, BG)
+    gradient_draw = ImageDraw.Draw(gradient)
+    for y in range(top, bottom + 1):
+        ratio = (y - top) / max(1, bottom - top)
+        gradient_draw.line((left, y, right, y), fill=_mix(BG, color, 0.16 + ratio * 0.34), width=1)
+    image.paste(gradient, (0, 0), mask)
+
+    # İnce kılavuz çizgileri alanı daha dolu ve okunur gösterir.
+    for ratio in (0.25, 0.5, 0.75):
+        guide_y = int(top + (bottom - top) * ratio)
+        draw.line((left, guide_y, right, guide_y), fill="#183343", width=1)
     draw.line(mapped, fill=color, width=5, joint="curve")
-    draw.ellipse((mapped[-1][0] - 7, mapped[-1][1] - 7, mapped[-1][0] + 7, mapped[-1][1] + 7), fill=color)
+    last_x, last_y = mapped[-1]
+    draw.ellipse((last_x - 11, last_y - 11, last_x + 11, last_y + 11), fill=BG, outline=color, width=4)
+    draw.ellipse((last_x - 5, last_y - 5, last_x + 5, last_y + 5), fill=color)
+    if last_label:
+        bubble_font = _font(18, bold=True)
+        bubble_width = _text_width(draw, last_label, bubble_font) + 26
+        bubble_x = max(left + 8, min(last_x - bubble_width - 14, right - bubble_width))
+        bubble_y = max(top + 4, last_y - 48)
+        draw.rounded_rectangle((bubble_x, bubble_y, bubble_x + bubble_width, bubble_y + 34), radius=17, fill=color)
+        draw.text((bubble_x + 13, bubble_y + 7), last_label, font=bubble_font, fill=BG)
+
+
+def _draw_time_tabs(draw: ImageDraw.ImageDraw, x: int, y: int, selected: str = "1G") -> None:
+    tab_font = _font(17, bold=True)
+    for tab in ("1G", "1H", "1A", "1Y"):
+        width = _text_width(draw, tab, tab_font) + 28
+        active = tab == selected
+        draw.rounded_rectangle(
+            (x, y, x + width, y + 34),
+            radius=17,
+            fill=GREEN_DARK if active else PANEL_ALT,
+            outline=GREEN if active else BORDER,
+            width=2 if active else 1,
+        )
+        draw.text((x + 14, y + 7), tab, font=tab_font, fill=GREEN if active else MUTED)
+        x += width + 10
+
+
+def _draw_asset_icon(draw: ImageDraw.ImageDraw, x: int, y: int, symbol: str, is_crypto: bool) -> None:
+    accent = ORANGE if is_crypto else GREEN
+    draw.ellipse((x, y, x + 78, y + 78), fill=BG, outline=accent, width=3)
+    draw.ellipse((x + 10, y + 10, x + 68, y + 68), fill=GREEN_DARK if not is_crypto else "#4A3020")
+    # DejaVu Sans bazı ortamlarda ₿ glifini kutu gösterebildiği için güvenli B işareti kullanılır.
+    mark = "B" if is_crypto and symbol.upper() == "BTC" else symbol[:1].upper()
+    mark_font = _font(34, bold=True)
+    mark_width = _text_width(draw, mark, mark_font)
+    draw.text((x + (78 - mark_width) // 2, y + 18), mark, font=mark_font, fill=accent)
+
+
+def _market_status(is_crypto: bool) -> tuple[str, str]:
+    if is_crypto:
+        return "7/24 AKTİF", GREEN
+    now = datetime.now(ZoneInfo("Europe/Istanbul"))
+    open_now = now.weekday() < 5 and 10 <= (now.hour * 60 + now.minute) < (18 * 60 + 10)
+    return ("BIST · AÇIK" if open_now else "BIST · KAPALI"), (GREEN if open_now else MUTED)
+
+
+def _trend_label(change_pct: float | None) -> tuple[str, str]:
+    if change_pct is None or abs(change_pct) < 0.10:
+        return "YATAY ↔", GOLD
+    if change_pct > 0:
+        return "YÜKSELİŞ ↑", GREEN
+    return "DÜŞÜŞ ↓", RED
 
 
 def _path(output_dir: Path, slug: str) -> Path:
@@ -303,48 +386,144 @@ def save_help_card(output_dir: Path) -> Path:
     return _save(image, output_dir, "help_card")
 
 
+def _pair_metric(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    label: str,
+    first: str,
+    second: str,
+    accent: str,
+) -> None:
+    _panel(draw, box, fill=PANEL, outline=BORDER, radius=22)
+    x, y, _, _ = box
+    draw.text((x + 20, y + 16), label.upper(), font=_font(16, bold=True), fill=MUTED)
+    draw.text((x + 20, y + 49), first, font=_font(24, bold=True), fill=accent)
+    draw.text((x + 20, y + 80), second, font=_font(18), fill=MUTED)
+
+
+def _frame_number(frame: pd.DataFrame | None, column: str, reducer: str) -> float | None:
+    if frame is None or column not in frame:
+        return None
+    values = pd.to_numeric(frame[column], errors="coerce").dropna()
+    if values.empty:
+        return None
+    if reducer == "first":
+        return float(values.iloc[0])
+    if reducer == "last":
+        return float(values.iloc[-1])
+    if reducer == "max":
+        return float(values.max())
+    if reducer == "min":
+        return float(values.min())
+    return None
+
+
+def _price_or_dash(value: float | None) -> str:
+    return number(value) if value is not None else "—"
+
+
 def save_quote_card(
     quote: Quote,
     output_dir: Path,
     snapshot: dict[str, Any] | None = None,
     ohlcv: pd.DataFrame | None = None,
 ) -> Path:
-    height = 1330
-    image, draw, y = _base("PİYASA KARTI", f"{quote.symbol}  ·  {quote.name}", height=height)
+    """Hisse ve kripto için premium, mobil odaklı ortak piyasa kartı."""
+    snapshot = snapshot or {}
+    is_crypto = quote.currency.upper() == "USDT"
+    full_name = str(snapshot.get("name") or quote.name or quote.symbol)
+    subtitle = f"{quote.symbol}  –  {full_name}"
+    height = 1450
+    image, draw, y = _base("PİYASA KARTI", subtitle, height=height)
     trend = _trend_color(quote.change_pct)
-    _panel(draw, (56, y, WIDTH - 56, y + 226), fill=PANEL_ALT, outline=BORDER, radius=28)
-    draw.text((86, y + 30), quote.symbol, font=_font(28, bold=True), fill=GREEN)
-    draw.text((86, y + 76), number(quote.price), font=_font(64, bold=True), fill=TEXT)
-    draw.text((86, y + 154), quote.currency, font=_font(24, bold=True), fill=MUTED)
-    change_text = signed_pct(quote.change_pct)
-    pill_x = WIDTH - 86 - _text_width(draw, change_text, _font(28, bold=True)) - 36
-    _pill(draw, pill_x, y + 54, change_text, GREEN_DARK if trend == GREEN else RED_DARK, trend, 28)
-    label = "GECİKMELİ / HARİCİ" if quote.delayed else "ANLIK PUBLIC VERİ"
-    label_width = _text_width(draw, label, _font(18, bold=True)) + 28
-    draw.rounded_rectangle((WIDTH - 86 - label_width, y + 145, WIDTH - 86, y + 181), radius=18, fill=BG, outline=BORDER, width=1)
-    draw.text((WIDTH - 72 - label_width, y + 154), label, font=_font(18, bold=True), fill=MUTED)
-    y += 258
-    _metric(draw, (56, y, 526, y + 122), "24S DEĞİŞİM", signed_pct(quote.change_pct), trend, 31)
-    _metric(draw, (554, y, WIDTH - 56, y + 122), "HACİM", _compact(quote.volume), CYAN, 31)
-    y += 148
-    _panel(draw, (56, y, WIDTH - 56, y + 235), fill=PANEL)
-    draw.text((86, y + 24), "FİYAT AKIŞI", font=_font(21, bold=True), fill=GREEN)
-    if ohlcv is not None and "close" in ohlcv:
-        _draw_sparkline(draw, (86, y + 74, WIDTH - 86, y + 192), ohlcv["close"].tail(45), trend)
+    trend_label, trend_accent = _trend_label(quote.change_pct)
+    metadata = quote.metadata or {}
+    open_value = metadata.get("open")
+    day_high = metadata.get("high")
+    day_low = metadata.get("low")
+    previous_close = metadata.get("previous_close")
+    long_frame = ohlcv.tail(365) if ohlcv is not None else None
+    range_high = _frame_number(long_frame, "high", "max")
+    range_low = _frame_number(long_frame, "low", "min")
+    if is_crypto:
+        range_label = "24S YÜKSEK / DÜŞÜK"
+        range_high = day_high
+        range_low = day_low
+        market_cap = snapshot.get("market_cap_usd")
+        market_cap_text = _compact(market_cap, " USD")
     else:
-        draw.text((86, y + 96), "Mini grafik için ek OHLCV verisi bulunamadı.", font=_font(23), fill=MUTED)
-    y += 264
-    if snapshot:
-        draw.text((56, y), "KRİPTO PİYASA BİLGİSİ", font=_font(23, bold=True), fill=ORANGE)
-        y += 42
-        _metric(draw, (56, y, 374, y + 120), "PİYASA DEĞERİ", _compact(snapshot.get("market_cap_usd"), " USD"), ORANGE, 27)
-        _metric(draw, (390, y, 708, y + 120), "24S HACİM", _compact(snapshot.get("volume_24h_usd"), " USD"), CYAN, 27)
-        _metric(draw, (724, y, WIDTH - 56, y + 120), "COINGECKO 24S", signed_pct(snapshot.get("change_24h_pct")), _trend_color(snapshot.get("change_24h_pct")), 27)
-        y += 142
-    source = quote.source
+        range_label = "52H YÜKSEK / DÜŞÜK"
+        market_cap = snapshot.get("market_cap")
+        market_cap_text = _compact(market_cap)
+
+    # Varlık özeti: ikonu, tam adı ve piyasa durumunu tek bir hero panelinde toplar.
+    _panel(draw, (56, y, WIDTH - 56, y + 214), fill=PANEL_ALT, outline=BORDER, radius=28)
+    _draw_asset_icon(draw, 84, y + 36, quote.symbol, is_crypto)
+    draw.text((184, y + 36), quote.symbol, font=_font(29, bold=True), fill=GREEN if not is_crypto else ORANGE)
+    name_font = _font(22, bold=True)
+    name_text = full_name if len(full_name) <= 27 else full_name[:24] + "..."
+    draw.text((184, y + 78), name_text, font=name_font, fill=MUTED)
+    draw.text((184, y + 121), number(quote.price), font=_font(53, bold=True), fill=TEXT)
+    draw.text((184, y + 178), quote.currency, font=_font(19, bold=True), fill=MUTED)
+    status_text, status_color = _market_status(is_crypto)
+    status_font = _font(18, bold=True)
+    status_width = _text_width(draw, status_text, status_font) + 30
+    draw.rounded_rectangle((WIDTH - 86 - status_width, y + 32, WIDTH - 86, y + 70), radius=19, fill=GREEN_DARK if status_color == GREEN else PANEL, outline=status_color, width=2)
+    draw.text((WIDTH - 71 - status_width, y + 42), status_text, font=status_font, fill=status_color)
+    change_text = signed_pct(quote.change_pct)
+    change_font = _font(29, bold=True)
+    change_width = _text_width(draw, change_text, change_font) + 36
+    draw.rounded_rectangle((WIDTH - 86 - change_width, y + 102, WIDTH - 86, y + 154), radius=25, fill=GREEN_DARK if trend == GREEN else RED_DARK)
+    draw.text((WIDTH - 68 - change_width, y + 113), change_text, font=change_font, fill=trend)
+    source_label = "GECİKMELİ / HARİCİ" if quote.delayed else "ANLIK PUBLIC VERİ"
+    source_font = _font(15, bold=True)
+    source_width = _text_width(draw, source_label, source_font) + 24
+    draw.rounded_rectangle((WIDTH - 86 - source_width, y + 171, WIDTH - 86, y + 198), radius=14, fill=BG, outline=BORDER, width=1)
+    draw.text((WIDTH - 74 - source_width, y + 177), source_label, font=source_font, fill=MUTED)
+    y += 238
+
+    # 2x3 veri grid'i: yüksek bilgi yoğunluğu, kısa etiket ve iki satırlı range kutusu.
+    cell_width = 310
+    cell_height = 112
+    gap = 18
+    x_positions = [56, 56 + cell_width + gap, 56 + 2 * (cell_width + gap)]
+    grid = [
+        ("AÇILIŞ", _price_or_dash(open_value), CYAN),
+        ("GÜN İÇİ YÜKSEK", _price_or_dash(day_high), GREEN),
+        ("GÜN İÇİ DÜŞÜK", _price_or_dash(day_low), RED),
+        ("ÖNCEKİ KAPANIŞ", _price_or_dash(previous_close), GOLD),
+    ]
+    for index, (label, value, accent) in enumerate(grid[:3]):
+        _metric(draw, (x_positions[index], y, x_positions[index] + cell_width, y + cell_height), label, value, accent, 26)
+    second_y = y + cell_height + 18
+    for index, (label, value, accent) in enumerate(grid[3:]):
+        _metric(draw, (x_positions[index], second_y, x_positions[index] + cell_width, second_y + cell_height), label, value, accent, 25)
+    _pair_metric(draw, (x_positions[1], second_y, x_positions[1] + cell_width, second_y + cell_height), range_label, _price_or_dash(range_high), _price_or_dash(range_low), ORANGE)
+    market_label = "PİYASA DEĞERİ" if not is_crypto else "PİYASA DEĞERİ"
+    _metric(draw, (x_positions[2], second_y, x_positions[2] + cell_width, second_y + cell_height), market_label, market_cap_text, ORANGE, 22 if len(market_cap_text) > 13 else 26)
+    y = second_y + cell_height + 22
+
+    # Grafik paneli: zaman sekmeleri, neon gradient dolgu ve son veri balonu.
+    graph_height = 342
+    _panel(draw, (56, y, WIDTH - 56, y + graph_height), fill=PANEL, outline=BORDER, radius=24)
+    draw.text((84, y + 20), "FİYAT AKIŞI", font=_font(21, bold=True), fill=GREEN)
+    _draw_time_tabs(draw, 757, y + 15, selected="1G")
+    closes = ohlcv["close"].tail(60) if ohlcv is not None and "close" in ohlcv else None
+    if closes is not None and not closes.dropna().empty:
+        _draw_sparkline(image, draw, (86, y + 82, WIDTH - 86, y + 282), closes, trend, number(quote.price))
+    else:
+        draw.text((86, y + 130), "Grafik için OHLCV verisi bulunamadı.", font=_font(23), fill=MUTED)
+    y += graph_height + 22
+
+    # Basit sinyal/trend özeti, karar önerisi vermeden yönü görselleştirir.
+    _panel(draw, (56, y, WIDTH - 56, y + 82), fill=GREEN_DARK if trend_accent == GREEN else (RED_DARK if trend_accent == RED else PANEL_ALT), outline=trend_accent, radius=22)
+    draw.text((84, y + 25), "TREND", font=_font(18, bold=True), fill=MUTED)
+    trend_width = _text_width(draw, trend_label, _font(27, bold=True))
+    draw.text((WIDTH - 86 - trend_width, y + 20), trend_label, font=_font(27, bold=True), fill=trend_accent)
+
     if quote.note:
-        _draw_wrapped(draw, (56, height - 165), quote.note, _font(18), MUTED, WIDTH - 112, line_gap=4)
-    _footer(draw, height, source)
+        _draw_wrapped(draw, (56, height - 168), quote.note, _font(17), MUTED, WIDTH - 112, line_gap=4)
+    _footer(draw, height, quote.source)
     return _save(image, output_dir, f"quote_{quote.symbol.lower()}")
 
 

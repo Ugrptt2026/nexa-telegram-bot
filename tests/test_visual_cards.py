@@ -54,8 +54,23 @@ def test_visual_cards_cover_main_bot_outputs(tmp_path):
         source="Test provider",
         delayed=True,
         note="Test verisi.",
+        metadata={"open": 158.0, "high": 166.0, "low": 156.0, "previous_close": 160.5},
     )
-    snapshot = {"market_cap_usd": 1_340_000_000_000, "volume_24h_usd": 24_600_000_000, "change_24h_pct": 1.35}
+    snapshot = {"name": "Türk Hava Yolları", "market_cap": 1_200_000_000_000}
+    crypto_quote = Quote(
+        symbol="BTC",
+        name="BTC/USDT",
+        price=68_420.50,
+        change_pct=1.35,
+        volume=24_600_000_000,
+        currency="USDT",
+        as_of=datetime.now(timezone.utc),
+        source="Binance Spot public API",
+        delayed=False,
+        note="24 saatlik değişim; fiyat USDT cinsindendir.",
+        metadata={"open": 67_500.0, "high": 68_950.0, "low": 67_120.0, "previous_close": 67_509.0},
+    )
+    crypto_snapshot = {"name": "Bitcoin", "market_cap_usd": 1_340_000_000_000, "volume_24h_usd": 24_600_000_000, "change_24h_pct": 1.35}
     technical = TechnicalSnapshot(55.2, 1.2, 0.8, 150.0, 140.0, 120.0, 170.0)
     mover = Mover("THYAO", 164.0, 2.15, 5_680_000, "Test provider")
     items = [{"name": "BIST 100", "date": "2026-08-27", "open": 100.0, "high": 105.0, "low": 98.0, "close": 103.0}]
@@ -68,6 +83,7 @@ def test_visual_cards_cover_main_bot_outputs(tmp_path):
         save_start_card("Ugrptt", tmp_path),
         save_help_card(tmp_path),
         save_quote_card(quote, tmp_path, snapshot=snapshot, ohlcv=ohlcv),
+        save_quote_card(crypto_quote, tmp_path, snapshot=crypto_snapshot, ohlcv=ohlcv),
         save_technical_card("THYAO", technical, tmp_path, last_price=164.0),
         save_fundamentals_card({"symbol": "THYAO", "name": "Türk Hava Yolları", "pe": 4.85, "pb": 1.32, "dividend_yield_pct": 2.2, "market_cap": 1_200_000_000, "source": "Test"}, tmp_path),
         save_global_market_card({"total_market_cap_usd": 2_000_000_000_000, "total_volume_24h_usd": 70_000_000_000, "btc_dominance_pct": 54.0, "active_cryptocurrencies": 10_000, "source": "Test"}, tmp_path),

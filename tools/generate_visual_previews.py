@@ -34,8 +34,27 @@ def main() -> None:
         source="Yahoo Finance via yfinance",
         delayed=True,
         note="Resmi ve garantili gerçek zamanlı BIST API'si değildir; veri gecikmeli olabilir.",
+        metadata={"open": 158.0, "high": 166.0, "low": 156.0, "previous_close": 160.5},
     )
     snapshot = {
+        "name": "Türk Hava Yolları",
+        "market_cap": 1_200_000_000_000,
+    }
+    crypto_quote = Quote(
+        symbol="BTC",
+        name="BTC/USDT",
+        price=68_420.50,
+        change_pct=1.35,
+        volume=24_600_000_000,
+        currency="USDT",
+        as_of=datetime.now(timezone.utc),
+        source="Binance Spot public API",
+        delayed=False,
+        note="24 saatlik değişim; fiyat USDT cinsindendir.",
+        metadata={"open": 67_500.0, "high": 68_950.0, "low": 67_120.0, "previous_close": 67_509.0},
+    )
+    crypto_snapshot = {
+        "name": "Bitcoin",
         "market_cap_usd": 1_340_000_000_000,
         "volume_24h_usd": 24_600_000_000,
         "change_24h_pct": 1.35,
@@ -47,6 +66,7 @@ def main() -> None:
         save_start_card("Ugrptt", OUTPUT),
         save_help_card(OUTPUT),
         save_quote_card(quote, OUTPUT, snapshot=snapshot, ohlcv=ohlcv),
+        save_quote_card(crypto_quote, OUTPUT, snapshot=crypto_snapshot, ohlcv=ohlcv),
         save_technical_card("THYAO", technical, OUTPUT, last_price=164.0, source="NEXA ücretsiz veri katmanı"),
         save_portfolio_card([position], {("stock", "THYAO"): quote}, OUTPUT),
     ]

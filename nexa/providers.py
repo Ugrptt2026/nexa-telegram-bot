@@ -12,7 +12,7 @@ Hiçbir sağlayıcıdan işlem emri veya kişisel finansal veri alınmaz.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -37,6 +37,7 @@ class Quote:
     source: str
     delayed: bool
     note: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +122,12 @@ class BinanceClient(_HttpProvider):
             source="Binance Spot public API",
             delayed=False,
             note="24 saatlik değişim; fiyat USDT cinsindendir.",
+            metadata={
+                "open": _as_float(payload.get("openPrice")),
+                "high": _as_float(payload.get("highPrice")),
+                "low": _as_float(payload.get("lowPrice")),
+                "previous_close": _as_float(payload.get("prevClosePrice")),
+            },
         )
 
     def get_ohlcv(self, symbol: str, interval: str = "1d", limit: int = 120) -> pd.DataFrame:
@@ -245,6 +252,20 @@ class AlternativeClient(_HttpProvider):
         )
 
 
+BIST_DISPLAY_NAMES: dict[str, str] = {
+    "THYAO": "Türk Hava Yolları",
+    "ASELS": "Aselsan",
+    "AKBNK": "Akbank",
+    "EREGL": "Ereğli Demir Çelik",
+    "TUPRS": "Tüpraş",
+    "BIMAS": "BİM Birleşik Mağazalar",
+    "SISE": "Şişecam",
+    "TCELL": "Turkcell",
+    "KOZAL": "Koza Altın",
+    "PGSUS": "Pegasus",
+}
+
+
 class YahooBistClient:
     """Yahoo Finance verisini yfinance ile kullanan BIST istemcisi.
 
@@ -276,9 +297,11 @@ class YahooBistClient:
         as_of = pd.Timestamp(index_value).to_pydatetime()
         if as_of.tzinfo is None:
             as_of = as_of.replace(tzinfo=timezone.utc)
+        display_symbol = yahoo_symbol.removesuffix(".IS")
+        latest_row = history.iloc[-1]
         return Quote(
-            symbol=yahoo_symbol.removesuffix(".IS"),
-            name=yahoo_symbol.removesuffix(".IS"),
+            symbol=display_symbol,
+            name=BIST_DISPLAY_NAMES.get(display_symbol, display_symbol),
             price=price,
             change_pct=change_pct,
             volume=float(volumes.iloc[-1]) if not volumes.empty else None,
@@ -287,6 +310,12 @@ class YahooBistClient:
             source="Yahoo Finance via yfinance",
             delayed=True,
             note="Resmi ve garantili gerçek zamanlı BIST API'si değildir; veri gecikmeli olabilir.",
+            metadata={
+                "open": _as_float(latest_row.get("Open")),
+                "high": _as_float(latest_row.get("High")),
+                "low": _as_float(latest_row.get("Low")),
+                "previous_close": previous,
+            },
         )
 
     def get_ohlcv(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
@@ -408,6 +437,7 @@ class YahooMacroClient:
         if index_value.tzinfo is None:
             index_value = index_value.replace(tzinfo=timezone.utc)
         currency = "TRY" if key in {"XU030", "XU100", "USDTRY", "EURTRY"} else "USD"
+        latest_row = history.iloc[-1]
         return Quote(
             symbol=key,
             name=display_name,
@@ -419,6 +449,12 @@ class YahooMacroClient:
             source="Yahoo Finance via yfinance",
             delayed=True,
             note="Gecikmeli/harici veri kaynağı; gerçek zamanlılık garanti edilmez.",
+            metadata={
+                "open": _as_float(latest_row.get("Open")),
+                "high": _as_float(latest_row.get("High")),
+                "low": _as_float(latest_row.get("Low")),
+                "previous_close": previous,
+            },
         )
 
 

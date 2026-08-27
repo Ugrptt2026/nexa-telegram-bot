@@ -215,7 +215,7 @@ async def _reply_quote(
         )
         return
 
-    snapshot = None
+    snapshot: dict[str, object] | None = None
     if asset_type == "crypto":
         coin_id = COINGECKO_COIN_IDS.get(quote.symbol)
         if coin_id:
@@ -226,10 +226,19 @@ async def _reply_quote(
                 )
             except MarketDataError:
                 LOGGER.info("CoinGecko coin özeti alınamadı: %s", quote.symbol)
+    else:
+        try:
+            fundamentals = await asyncio.to_thread(client.get_fundamentals, symbol)
+            snapshot = {
+                "name": fundamentals.get("name"),
+                "market_cap": fundamentals.get("market_cap"),
+            }
+        except Exception:
+            LOGGER.info("Hisse piyasa değeri alınamadı: %s", quote.symbol)
     ohlcv = None
     try:
         if asset_type == "stock":
-            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "3mo", "1d")
+            ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "1y", "1d")
         else:
             ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "1d", 60)
     except Exception:

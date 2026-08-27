@@ -53,6 +53,10 @@ def test_binance_quote_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
             "lastPrice": "65000.1",
             "priceChangePercent": "1.25",
             "quoteVolume": "1234",
+            "openPrice": "64000",
+            "highPrice": "66000",
+            "lowPrice": "63000",
+            "prevClosePrice": "64200",
             "closeTime": 0,
         },
     )
@@ -61,6 +65,10 @@ def test_binance_quote_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
     assert quote.price == 65000.1
     assert quote.change_pct == 1.25
     assert quote.delayed is False
+    assert quote.metadata["open"] == 64000.0
+    assert quote.metadata["high"] == 66000.0
+    assert quote.metadata["low"] == 63000.0
+    assert quote.metadata["previous_close"] == 64200.0
 
 
 def test_fear_greed_is_immutable() -> None:
