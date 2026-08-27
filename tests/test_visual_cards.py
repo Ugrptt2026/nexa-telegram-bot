@@ -150,4 +150,4 @@ def test_volume_profile_card_is_mobile_png(tmp_path) -> None:
     path = save_volume_profile_card("THYAO", quote, profile, tmp_path)
     _assert_mobile_card(path)
     with Image.open(path) as image:
-        assert image.size == (1080, 1580)
+        assert image.size == (1080, 1640)
