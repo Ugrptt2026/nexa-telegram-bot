@@ -2,7 +2,7 @@
 
 Bu modül, sağlayıcıların birbirinin yerine geçebileceğini varsaymaz:
 - Binance: kripto spot fiyatı ve OHLCV.
-- yfinance/Yahoo: BIST için gecikmeli/garantisiz fallback.
+- Borsa İstanbul public hacim liderleri + yfinance/Yahoo: BIST güncel TL hacim ve tarihsel OHLCV fallback.
 - CoinGecko: opsiyonel Demo anahtarı ile market-cap/global veri.
 - Alternative.me: ücretsiz Fear & Greed endpoint'i.
 
@@ -106,6 +106,28 @@ class _HttpProvider:
             return response.json()
         except (httpx.HTTPError, ValueError) as exc:
             raise MarketDataError(f"Veri sağlayıcısına erişilemedi: {self.base_url}") from exc
+
+
+class BorsaIstanbulClient(_HttpProvider):
+    """Borsa İstanbul’un herkese açık güncel pay hacim listesini okur."""
+
+    def __init__(self) -> None:
+        super().__init__("https://www.borsaistanbul.com")
+
+    def get_stock_snapshot(self, symbol: str) -> dict[str, Any] | None:
+        cleaned = symbol.strip().upper().removesuffix(".IS")
+        if not cleaned:
+            raise ValueError("Sembol boş olamaz")
+        payload = self._get_json("veriler.php", {"veriTuru": "pay-hacim-liderleri"})
+        if not isinstance(payload, dict) or payload.get("status") != "success":
+            raise MarketDataError("Borsa İstanbul pay hacim verisi beklenen biçimde değil")
+        rows = payload.get("data")
+        if not isinstance(rows, list):
+            raise MarketDataError("Borsa İstanbul pay hacim listesi bulunamadı")
+        for row in rows:
+            if isinstance(row, dict) and str(row.get("symbolName", "")).upper() == cleaned:
+                return row
+        return None
 
 
 class BinanceClient(_HttpProvider):
@@ -316,11 +338,22 @@ BIST_DISPLAY_NAMES: dict[str, str] = {
 
 
 class YahooBistClient:
-    """Yahoo Finance verisini yfinance ile kullanan BIST istemcisi.
+    """Yahoo Finance OHLCV’yi, mümkünse resmi Borsa güncel hacim listesiyle tamamlar.
 
     yfinance resmi Yahoo SDK'sı değildir; bu nedenle quote `delayed=True`
-    ve kaynak/uyarı bilgisiyle döndürülür.
+    ve kaynak/uyarı bilgisiyle döndürülür. Borsa İstanbul’un herkese açık
+    hacim listesi yalnızca hacim liderlerini içerdiği için diğer sembollerde
+    Yahoo fallback’i korunur.
     """
+
+    def __init__(self, official_client: BorsaIstanbulClient | None = None) -> None:
+        self.official_client = official_client or BorsaIstanbulClient()
+
+    def _get_official_snapshot(self, symbol: str) -> dict[str, Any] | None:
+        try:
+            return self.official_client.get_stock_snapshot(symbol)
+        except (MarketDataError, ValueError):
+            return None
 
     def get_quote(self, symbol: str) -> Quote:
         yahoo_symbol = normalize_bist_symbol(symbol)
@@ -348,23 +381,31 @@ class YahooBistClient:
             as_of = as_of.replace(tzinfo=timezone.utc)
         display_symbol = yahoo_symbol.removesuffix(".IS")
         latest_row = history.iloc[-1]
+        official = self._get_official_snapshot(display_symbol)
+        official_price = _as_float(official.get("lastPrice")) if official else None
+        official_change = _as_float(official.get("netPercentage")) if official else None
+        official_volume = _as_float(official.get("accumulatedVolume")) if official else None
+        official_turnover = _as_float(official.get("accumulatedTurnover")) if official else None
+        metadata = {
+            "open": _as_float(latest_row.get("Open")),
+            "high": _as_float(latest_row.get("High")),
+            "low": _as_float(latest_row.get("Low")),
+            "previous_close": previous,
+            "official_volume": official_volume,
+            "official_turnover": official_turnover,
+        }
         return Quote(
             symbol=display_symbol,
             name=BIST_DISPLAY_NAMES.get(display_symbol, display_symbol),
-            price=price,
-            change_pct=change_pct,
-            volume=float(volumes.iloc[-1]) if not volumes.empty else None,
+            price=official_price if official_price is not None else price,
+            change_pct=official_change if official_change is not None else change_pct,
+            volume=official_volume if official_volume is not None else (float(volumes.iloc[-1]) if not volumes.empty else None),
             currency="TRY",
             as_of=as_of,
-            source="Yahoo Finance via yfinance",
+            source="Borsa İstanbul + Yahoo Finance via yfinance" if official else "Yahoo Finance via yfinance",
             delayed=True,
-            note="Resmi ve garantili gerçek zamanlı BIST API'si değildir; veri gecikmeli olabilir.",
-            metadata={
-                "open": _as_float(latest_row.get("Open")),
-                "high": _as_float(latest_row.get("High")),
-                "low": _as_float(latest_row.get("Low")),
-                "previous_close": previous,
-            },
+            note="Borsa güncel hacim listesi; tarihsel OHLCV Yahoo üzerinden gelir ve gecikmeli olabilir." if official else "Resmi ve garantili gerçek zamanlı BIST API'si değildir; veri gecikmeli olabilir.",
+            metadata=metadata,
         )
 
     def get_ohlcv(self, symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:

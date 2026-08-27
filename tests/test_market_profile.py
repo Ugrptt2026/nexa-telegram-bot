@@ -25,10 +25,17 @@ def test_volume_profile_calculates_real_ohlcv_volume_buckets() -> None:
     assert profile.average_volume == 350
     assert profile.latest_volume == 600
     assert profile.latest_vs_average_pct == pytest.approx(71.4285714)
+    assert profile.total_turnover == pytest.approx(22366.6666667)
+    assert profile.average_turnover == pytest.approx(3727.7777778)
+    assert profile.latest_turnover == pytest.approx(6200)
     assert len(profile.zones) == 3
     assert sum(zone.volume for zone in profile.zones) == 2100
     assert sum(zone.share_pct for zone in profile.zones) == pytest.approx(100)
+    assert sum(zone.turnover for zone in profile.zones) == pytest.approx(profile.total_turnover)
+    assert sum(zone.turnover_share_pct for zone in profile.zones) == pytest.approx(100)
     assert len(profile.recent_bars) == 6
+    assert profile.recent_bars[-1].typical_price == pytest.approx(10.3333333)
+    assert profile.recent_bars[-1].turnover == pytest.approx(6200)
 
 
 def test_volume_profile_rejects_missing_or_short_ohlcv() -> None:

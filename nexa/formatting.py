@@ -39,11 +39,14 @@ def format_quote(quote: Quote) -> str:
         f"<b>{quote.symbol}</b> — {quote.name}",
         f"Fiyat: <b>{number(quote.price)}</b> {quote.currency}",
         f"24 saat/değişim: <b>{signed_pct(quote.change_pct)}</b>",
-        f"Hacim: {number(quote.volume, 0) if quote.volume is not None else '—'}",
+        f"İşlem miktarı (adet): {number(quote.volume, 0) if quote.volume is not None else '—'}",
         f"Zaman: {date_text(quote.as_of)}",
         f"Kaynak: {quote.source}",
         f"Veri türü: {delayed_line}",
     ]
+    official_turnover = quote.metadata.get("official_turnover")
+    if official_turnover is not None:
+        lines.insert(4, f"Güncel işlem hacmi (TL): {number(official_turnover, 0)}")
     if quote.note:
         lines.append(f"<i>Not: {quote.note}</i>")
     return "\n".join(lines)

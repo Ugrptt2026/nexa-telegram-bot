@@ -981,18 +981,19 @@ def save_depth_card(
 
 
 def save_volume_profile_card(symbol: str, quote: Quote, profile: VolumeProfile, output_dir: Path) -> Path:
-    """BIST için kripto derinlik kartıyla aynı yoğunlukta OHLCV analiz kartı."""
-    # Keep the exact portrait rhythm of the crypto depth card while replacing
-    # bid/ask rows with actual OHLCV candle-volume rows.
+    """BIST için kripto derinlik kartıyla aynı yoğunlukta, doğru OHLCV kartı."""
+    # Keep the crypto depth card's portrait rhythm, but use semantically
+    # correct OHLCV content: price zones on the left and recent daily bars on
+    # the right. Neither column is an order book or buyer/seller flow.
     height = 1640
-    image, draw, y = _base("BIST HACİM DAĞILIMI", f"{symbol.upper()}  ·  OHLCV hacim dağılımı", height=height)
+    image, draw, y = _base("BIST HACİM DAĞILIMI", f"{symbol.upper()}  ·  Son {profile.period_bars} günlük OHLCV", height=height)
 
     hero_height = 138
     _panel(draw, (56, y, WIDTH - 56, y + hero_height), fill=PANEL_ALT, outline=BORDER, radius=24)
     draw.ellipse((84, y + 31, 146, y + 93), fill=GREEN_TINT, outline=GREEN, width=2)
     draw.text((104, y + 43), "V", font=_font(27, bold=True), fill=GREEN)
     draw.text((176, y + 27), symbol.upper(), font=_font(30, bold=True), fill=GREEN)
-    draw.text((176, y + 70), "Yahoo Finance OHLCV", font=_font(19), fill=MUTED)
+    draw.text((176, y + 70), "Yahoo Finance OHLCV · adet × tipik fiyat", font=_font(19), fill=MUTED)
     badge = "OHLCV VERİSİ"
     badge_font = _font(17, bold=True)
     badge_width = _text_width(draw, badge, badge_font) + 28
@@ -1000,60 +1001,93 @@ def save_volume_profile_card(symbol: str, quote: Quote, profile: VolumeProfile, 
     draw.text((WIDTH - 72 - badge_width, y + 51), badge, font=badge_font, fill=GREEN)
     y += hero_height + 20
 
-    # Same four-tile summary row as the crypto depth card.
+    # Same four-tile summary row as the crypto depth card. Yahoo's OHLCV
+    # volume is the traded share count, not TRY turnover.
     metric_gap = 18
     metric_width = (WIDTH - 112 - metric_gap * 3) // 4
     metric_x = [56 + index * (metric_width + metric_gap) for index in range(4)]
     _metric(draw, (metric_x[0], y, metric_x[0] + metric_width, y + 112), "SON FİYAT", number(quote.price), CYAN, 24, fill=PANEL)
     _metric(draw, (metric_x[1], y, metric_x[1] + metric_width, y + 112), "DEĞİŞİM", signed_pct(quote.change_pct), _trend_color(quote.change_pct), 23, fill=GREEN_TINT if (quote.change_pct or 0) >= 0 else RED_TINT, label_fill=_trend_color(quote.change_pct))
-    _metric(draw, (metric_x[2], y, metric_x[2] + metric_width, y + 112), "TOPLAM HACİM", _compact(profile.total_volume), GREEN, 21, fill=GREEN_TINT, label_fill=GREEN)
-    _metric(draw, (metric_x[3], y, WIDTH - 56, y + 112), "ORT. BAR", _compact(profile.average_volume), CYAN, 22, fill=PANEL)
+    official_turnover = quote.metadata.get("official_turnover")
+    current_value = official_turnover if official_turnover is not None else profile.latest_turnover
+    current_label = "GÜNCEL HACİM (TL)" if official_turnover is not None else "TAHMİNİ DEĞER (TL)"
+    _metric(draw, (metric_x[2], y, metric_x[2] + metric_width, y + 112), current_label, _compact(current_value), GREEN, 18, fill=GREEN_TINT, label_fill=GREEN)
+    _metric(draw, (metric_x[3], y, WIDTH - 56, y + 112), "ORT. BAR (ADET)", _compact(profile.average_volume), CYAN, 19, fill=PANEL)
     y += 138
 
-    up_pct = profile.up_volume / profile.total_volume * 100 if profile.total_volume else 0.0
-    down_pct = profile.down_volume / profile.total_volume * 100 if profile.total_volume else 0.0
-    draw.text((56, y), "HACİM DAĞILIMI · SON 10 BAR", font=_font(24, bold=True), fill=GREEN)
+    draw.text((56, y), "OHLCV HACİM PROFİLİ · SON 30 BAR", font=_font(24, bold=True), fill=GREEN)
     y += 43
     col_gap = 20
     col_width = (WIDTH - 112 - col_gap) // 2
     left_x = 56
     right_x = left_x + col_width + col_gap
     header_height = 42
-    left_heading = f"YÜKSELEN · UP  %{up_pct:.1f}".replace(".", ",")
-    right_heading = f"DÜŞEN · DOWN  %{down_pct:.1f}".replace(".", ",")
-    for x, heading, color in ((left_x, left_heading, GREEN), (right_x, right_heading, RED)):
+    for x, heading, color in ((left_x, "BÖLGELER · ÖZET", CYAN), (right_x, "SON 10 BAR", GREEN)):
         _panel(draw, (x, y, x + col_width, y + header_height), fill=PANEL_ALT, outline=color, radius=15)
         draw.text((x + 20, y + 11), heading, font=_font(18, bold=True), fill=color)
     y += header_height + 10
 
-    up_bars = tuple(reversed([bar for bar in profile.recent_bars if bar.direction == "up"][-10:]))
-    down_bars = tuple(reversed([bar for bar in profile.recent_bars if bar.direction == "down"][-10:]))
+    zones = tuple(reversed(profile.zones))
+    recent_bars = tuple(profile.recent_bars[-10:])
+    max_zone_volume = max((zone.volume for zone in zones), default=1.0)
+    max_bar_volume = max((bar.volume for bar in recent_bars), default=1.0)
+    summary_rows = (
+        ("TOPLAM ADET", _compact(profile.total_volume), "30 BAR"),
+        ("YÜKSELEN BAR", _compact(profile.up_volume), "ADET HACMİ"),
+        ("DÜŞEN BAR", _compact(profile.down_volume), "ADET HACMİ"),
+        ("YATAY BAR", _compact(profile.flat_volume), "ADET HACMİ"),
+        ("SON BAR / ORT.", signed_pct(profile.latest_vs_average_pct), "ADET ORANI"),
+    )
 
-    def draw_side(x: int, levels: tuple[Any, ...], color: str, tint: str) -> None:
-        max_volume = max((bar.volume for bar in levels), default=1.0)
+    def draw_zone_side(x: int) -> None:
         row_height = 72
         for index in range(10):
-            bar = levels[index] if index < len(levels) else None
+            zone = zones[index] if index < len(zones) else None
             row_y = y + index * (row_height + 8)
-            _panel(draw, (x, row_y, x + col_width, row_y + row_height), fill=tint, outline=BORDER, radius=15)
+            _panel(draw, (x, row_y, x + col_width, row_y + row_height), fill=PANEL, outline=BORDER, radius=15)
+            draw.text((x + 18, row_y + 12), f"{index + 1:02d}", font=_font(17, bold=True), fill=MUTED)
+            if zone is None:
+                summary_label, summary_value, summary_note = summary_rows[index - len(zones)]
+                draw.text((x + 70, row_y + 10), summary_label, font=_font(16, bold=True), fill=CYAN)
+                value_width = _text_width(draw, summary_value, _font(18, bold=True))
+                draw.text((x + col_width - 18 - value_width, row_y + 13), summary_value, font=_font(18, bold=True), fill=TEXT)
+                draw.text((x + 70, row_y + 42), summary_note, font=_font(12), fill=MUTED)
+                continue
+            range_text = f"{number(zone.low)} – {number(zone.high)}"
+            draw.text((x + 70, row_y + 10), range_text, font=_font(18, bold=True), fill=CYAN)
+            value_text = _compact(zone.volume)
+            value_width = _text_width(draw, value_text, _font(18, bold=True))
+            draw.text((x + col_width - 18 - value_width, row_y + 13), value_text, font=_font(18, bold=True), fill=TEXT)
+            share_text = f"PAY %{zone.share_pct:.1f} · ADET".replace(".", ",")
+            draw.text((x + 70, row_y + 39), share_text, font=_font(12), fill=MUTED)
+            bar_width = int((col_width - 104) * min(1.0, zone.volume / max_zone_volume))
+            draw.rounded_rectangle((x + 68, row_y + 56, x + 68 + bar_width, row_y + 64), radius=4, fill=CYAN)
+
+    def draw_bar_side(x: int) -> None:
+        row_height = 72
+        for index in range(10):
+            bar = recent_bars[index] if index < len(recent_bars) else None
+            row_y = y + index * (row_height + 8)
+            _panel(draw, (x, row_y, x + col_width, row_y + row_height), fill=PANEL, outline=BORDER, radius=15)
             draw.text((x + 18, row_y + 12), f"{index + 1:02d}", font=_font(17, bold=True), fill=MUTED)
             if bar is None:
                 draw.text((x + 70, row_y + 22), "—", font=_font(22, bold=True), fill=MUTED)
                 continue
-            bar_width = int((col_width - 104) * min(1.0, bar.volume / max_volume))
-            draw.rounded_rectangle((x + 68, row_y + 53, x + 68 + bar_width, row_y + 62), radius=4, fill=color)
+            color = GREEN if bar.direction == "up" else RED if bar.direction == "down" else GOLD
             close_text = number(bar.close)
             volume_text = _compact(bar.volume)
             draw.text((x + 70, row_y + 10), close_text, font=_font(21, bold=True), fill=color)
             volume_width = _text_width(draw, volume_text, _font(18, bold=True))
             draw.text((x + col_width - 18 - volume_width, row_y + 13), volume_text, font=_font(18, bold=True), fill=TEXT)
             draw.text((x + 70, row_y + 42), bar.label, font=_font(13), fill=MUTED)
-            volume_label = "HACİM"
-            label_width = _text_width(draw, volume_label, _font(13))
-            draw.text((x + col_width - 18 - label_width, row_y + 42), volume_label, font=_font(13), fill=MUTED)
+            direction_label = "YUKARI" if bar.direction == "up" else "AŞAĞI" if bar.direction == "down" else "YATAY"
+            label_width = _text_width(draw, direction_label, _font(13))
+            draw.text((x + col_width - 18 - label_width, row_y + 42), direction_label, font=_font(13), fill=MUTED)
+            bar_width = int((col_width - 104) * min(1.0, bar.volume / max_bar_volume))
+            draw.rounded_rectangle((x + 68, row_y + 53, x + 68 + bar_width, row_y + 62), radius=4, fill=color)
 
-    draw_side(left_x, up_bars, GREEN, GREEN_TINT)
-    draw_side(right_x, down_bars, RED, RED_TINT)
+    draw_zone_side(left_x)
+    draw_bar_side(right_x)
     _footer(draw, height, "Yahoo Finance via yfinance", "OHLCV ANALİZ VERİSİ")
     return _save(image, output_dir, f"volume_profile_{symbol.lower()}")
 
