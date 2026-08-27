@@ -8,7 +8,9 @@ Bu repo çalışan bir MVP içerir: `/start`, `/yardim`, `/menu`, inline keyboar
 
 ## Görsel ve mobil yanıt sistemi
 
-Komutların başarılı yanıtları artık uzun düz metin blokları yerine **NEXA markalı PNG kartları** olarak gönderilir. Kartlar 1080 piksel genişlikte, portre yönelimli ve telefon ekranında okunabilir yüksek kontrastlı bir düzen kullanır. Koyu lacivert zemin, yeşil marka vurgusu, büyük ana fiyat, ayrı metrik satırları, mini grafikler ve veri gecikmesi/kaynak uyarıları tüm ana kartlarda ortak standarda sahiptir.
+Komutların başarılı yanıtları artık uzun düz metin blokları yerine **NEXA markalı PNG kartları** olarak gönderilir. Kartlar 1080 piksel genişlikte, portre yönelimli ve telefon ekranında okunabilir yüksek kontrastlı bir düzen kullanır. Koyu lacivertten mor/yeşil tonlara geçen subtle arka plan, katmanlı veri kutuları, neon yön renkleri, büyük ana fiyat, 2×3 OHLC grid’i ve veri gecikmesi/kaynak uyarıları tüm piyasa kartlarında ortak standarda sahiptir.
+
+Piyasa kartındaki `FİYAT AKIŞI` bölümü gerçek OHLC verisinden üretilen sınırlı yoğunluklu candlestick grafik kullanır. Yeşil/kırmızı dolu gövdeler, ince fitiller, son mumun fiyat balonu ve `1G · 1H · 1A · 1Y` zaman sekmeleri görsel olarak gösterilir. Varsayılan canlı görünüm günlük mumlarla `1A` sekmesidir; geniş aralıklarda son 48 mumla sınırlandırılır. OHLC akışı boş veya eksikse uygulama bunu sessizce yok saymaz, ayrıntılı hata logu üretir.
 
 Başlangıç ve yardım ekranları da görsel karttır. `/hisse THYAO` ve `/kripto BTC` fiyat/değişim/hacim kartı, `/teknik hisse THYAO` teknik gösterge kartı, `/temel THYAO` temel oran kartı, `/piyasa`, `/fng`, `/tara`, `/ozet`, `/endeks`, `/kap`, `/alarm`, `/izleme` ve `/portfoy` ilgili mobil kartları üretir. `/grafik` ise NEXA koyu temalı fiyat grafiği gönderir.
 

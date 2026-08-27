@@ -98,3 +98,21 @@ def test_visual_cards_cover_main_bot_outputs(tmp_path):
     ]
     for path in paths:
         _assert_mobile_card(path)
+
+
+def test_market_card_logs_empty_ohlc_instead_of_silently_skipping(tmp_path, caplog):
+    quote = Quote(
+        symbol="THYAO",
+        name="Türk Hava Yolları",
+        price=300.0,
+        change_pct=0.4,
+        volume=1_000_000,
+        currency="TRY",
+        as_of=None,
+        source="Test provider",
+        delayed=True,
+    )
+    with caplog.at_level("ERROR"):
+        path = save_quote_card(quote, tmp_path, ohlcv=pd.DataFrame())
+    assert path.exists()
+    assert "OHLC/candlestick" in caplog.text

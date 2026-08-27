@@ -9,3 +9,4 @@ data/
 artifacts/
 *.sqlite3
 .DS_Store
+docs/live-previews/

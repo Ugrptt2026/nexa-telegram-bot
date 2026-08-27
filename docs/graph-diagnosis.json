@@ -1,0 +1,52 @@
+[
+  {
+    "asset_type": "stock",
+    "symbol": "THYAO",
+    "quote_price": 305.75,
+    "quote_metadata": {
+      "open": 309.5,
+      "high": 311.0,
+      "low": 305.5,
+      "previous_close": 308.5
+    },
+    "ohlcv_empty": false,
+    "ohlcv_rows": 255,
+    "ohlcv_columns": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "close_non_null": 255,
+    "open_non_null": 255,
+    "high_non_null": 255,
+    "low_non_null": 255,
+    "last_close": 305.75
+  },
+  {
+    "asset_type": "crypto",
+    "symbol": "BTC",
+    "quote_price": 80249.99,
+    "quote_metadata": {
+      "open": 78553.99,
+      "high": 80520.0,
+      "low": 77632.58,
+      "previous_close": 78554.0
+    },
+    "ohlcv_empty": false,
+    "ohlcv_rows": 60,
+    "ohlcv_columns": [
+      "open",
+      "high",
+      "low",
+      "close",
+      "volume"
+    ],
+    "close_non_null": 60,
+    "open_non_null": 60,
+    "high_non_null": 60,
+    "low_non_null": 60,
+    "last_close": 80260.0
+  }
+]

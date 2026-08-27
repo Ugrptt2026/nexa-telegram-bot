@@ -242,7 +242,7 @@ async def _reply_quote(
         else:
             ohlcv = await asyncio.to_thread(client.get_ohlcv, symbol, "1d", 60)
     except Exception:
-        LOGGER.info("Piyasa kartı mini grafiği alınamadı: %s", quote.symbol)
+        LOGGER.error("Piyasa kartı OHLCV verisi alınamadı: %s (%s)", quote.symbol, asset_type, exc_info=True)
 
     await _reply_card(
         update.message,

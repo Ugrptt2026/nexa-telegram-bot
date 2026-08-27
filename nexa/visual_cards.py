@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from pathlib import Path
 from typing import Any, Iterable
 from zoneinfo import ZoneInfo
@@ -24,12 +25,16 @@ TEXT = "#F4F7FA"
 MUTED = "#9BAFBB"
 GREEN = "#57E389"
 GREEN_DARK = "#123B32"
+GREEN_TINT = "#102E29"
 RED = "#FF747D"
 RED_DARK = "#42242A"
+RED_TINT = "#321F27"
 CYAN = "#5BD7F4"
 GOLD = "#F3C76B"
 ORANGE = "#F7A34D"
 WHITE = "#FFFFFF"
+
+LOGGER = logging.getLogger(__name__)
 
 _FONT_REGULAR = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 _FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -148,6 +153,13 @@ def _compact(value: float | int | None, suffix: str = "") -> str:
 
 def _base(title: str, subtitle: str = "", height: int = DEFAULT_HEIGHT) -> tuple[Image.Image, ImageDraw.ImageDraw, int]:
     image = Image.new("RGB", (WIDTH, height), BG)
+    gradient_draw = ImageDraw.Draw(image)
+    for row in range(height):
+        ratio = row / max(1, height - 1)
+        color = _mix(BG, "#14152B", ratio * 0.60)
+        if ratio > 0.70:
+            color = _mix(color, "#0C2927", (ratio - 0.70) / 0.30 * 0.22)
+        gradient_draw.line((0, row, WIDTH, row), fill=color, width=1)
     draw = ImageDraw.Draw(image)
     # Thin brand rail and soft header blocks keep the visual language consistent.
     draw.rectangle((0, 0, WIDTH, 12), fill=GREEN)
@@ -161,7 +173,7 @@ def _base(title: str, subtitle: str = "", height: int = DEFAULT_HEIGHT) -> tuple
     draw.rounded_rectangle((WIDTH - pill_width - 56, 58, WIDTH - 56, 104), radius=23, fill=GREEN_DARK, outline=GREEN, width=2)
     draw.text((WIDTH - pill_width - 39, 69), pill_text, font=pill_font, fill=GREEN)
 
-    draw.text((56, 178), title, font=_font(38, bold=True), fill=TEXT)
+    draw.text((56, 178), title, font=_font(38, bold=True), fill=GREEN)
     if subtitle:
         _draw_wrapped(draw, (56, 228), subtitle, _font(23), MUTED, WIDTH - 112, line_gap=5)
         content_y = 286
@@ -194,10 +206,12 @@ def _metric(
     value: str,
     accent: str = CYAN,
     value_size: int = 34,
+    fill: str = PANEL,
+    label_fill: str = MUTED,
 ) -> None:
-    _panel(draw, box, fill=PANEL, outline=BORDER, radius=22)
+    _panel(draw, box, fill=fill, outline=BORDER, radius=22)
     x, y, _, _ = box
-    draw.text((x + 24, y + 20), label.upper(), font=_font(18, bold=True), fill=MUTED)
+    draw.text((x + 24, y + 20), label.upper(), font=_font(18, bold=True), fill=label_fill)
     value_font = _font(value_size, bold=True)
     draw.text((x + 24, y + 55), value, font=value_font, fill=accent)
 
@@ -266,20 +280,104 @@ def _draw_sparkline(
         draw.text((bubble_x + 13, bubble_y + 7), last_label, font=bubble_font, fill=BG)
 
 
-def _draw_time_tabs(draw: ImageDraw.ImageDraw, x: int, y: int, selected: str = "1G") -> None:
-    tab_font = _font(17, bold=True)
-    for tab in ("1G", "1H", "1A", "1Y"):
-        width = _text_width(draw, tab, tab_font) + 28
+def _draw_time_tabs(draw: ImageDraw.ImageDraw, x: int, y: int, selected: str = "1A") -> None:
+    tab_font = _font(16, bold=True)
+    interval_font = _font(11, bold=True)
+    tabs = (("1G", "15DK"), ("1H", "1SA"), ("1A", "1G"), ("1Y", "1HF"))
+    for tab, interval in tabs:
+        width = 58
         active = tab == selected
         draw.rounded_rectangle(
-            (x, y, x + width, y + 34),
-            radius=17,
+            (x, y, x + width, y + 42),
+            radius=18,
             fill=GREEN_DARK if active else PANEL_ALT,
             outline=GREEN if active else BORDER,
             width=2 if active else 1,
         )
-        draw.text((x + 14, y + 7), tab, font=tab_font, fill=GREEN if active else MUTED)
-        x += width + 10
+        draw.text((x + 13, y + 4), tab, font=tab_font, fill=GREEN if active else MUTED)
+        draw.text((x + 13, y + 25), interval, font=interval_font, fill=GREEN if active else MUTED)
+        x += width + 9
+
+
+def _draw_candlesticks(
+    image: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    ohlcv: pd.DataFrame | None,
+    last_label: str | None = None,
+) -> None:
+    """OHLC verisini mobil kart için yoğunluğu sınırlı mum grafiğine dönüştürür."""
+    required = ("open", "high", "low", "close")
+    if ohlcv is None or ohlcv.empty or any(column not in ohlcv for column in required):
+        raise ValueError("Candlestick için OHLC verisi eksik veya boş")
+    frame = ohlcv.loc[:, list(required)].apply(pd.to_numeric, errors="coerce").dropna().tail(48)
+    if frame.empty:
+        raise ValueError("Candlestick için geçerli OHLC satırı yok")
+    left, top, right, bottom = box
+    high = float(frame["high"].max())
+    low = float(frame["low"].min())
+    span = high - low or 1.0
+    pad = span * 0.08
+    high += pad
+    low -= pad
+    span = high - low
+    chart_left = left + 8
+    chart_right = right - 8
+    chart_top = top + 8
+    chart_bottom = bottom - 8
+    draw.rectangle((chart_left, chart_top, chart_right, chart_bottom), fill="#0A1D2A")
+    for ratio in (0.25, 0.5, 0.75):
+        guide_y = int(chart_top + (chart_bottom - chart_top) * ratio)
+        draw.line((chart_left, guide_y, chart_right, guide_y), fill="#1A3544", width=1)
+
+    step = (chart_right - chart_left) / max(1, len(frame) - 1)
+    candle_width = max(6, min(18, int(step * 0.60)))
+
+    def map_y(value: float) -> int:
+        return int(chart_bottom - (value - low) / span * (chart_bottom - chart_top))
+
+    last_position: tuple[int, int] | None = None
+    for index, (_, row) in enumerate(frame.iterrows()):
+        center_x = int(chart_left + step * index)
+        open_value = float(row["open"])
+        high_value = float(row["high"])
+        low_value = float(row["low"])
+        close_value = float(row["close"])
+        rising = close_value >= open_value
+        color = GREEN if rising else RED
+        wick_x = center_x
+        draw.line((wick_x, map_y(high_value), wick_x, map_y(low_value)), fill=color, width=2)
+        body_top = map_y(max(open_value, close_value))
+        body_bottom = map_y(min(open_value, close_value))
+        body_bottom = max(body_bottom, body_top + 4)
+        draw.rectangle((center_x - candle_width // 2, body_top, center_x + candle_width // 2, body_bottom), fill=color, outline=color)
+        if index == len(frame) - 1:
+            last_position = (center_x, map_y(close_value))
+
+    if last_position and last_label:
+        last_x, last_y = last_position
+        bubble_font = _font(18, bold=True)
+        bubble_width = _text_width(draw, last_label, bubble_font) + 26
+        bubble_x = max(chart_left + 6, min(last_x - bubble_width - 14, chart_right - bubble_width))
+        bubble_y = max(chart_top + 4, last_y - 42)
+        draw.rounded_rectangle((bubble_x, bubble_y, bubble_x + bubble_width, bubble_y + 32), radius=16, fill=GREEN if frame["close"].iloc[-1] >= frame["open"].iloc[-1] else RED)
+        draw.text((bubble_x + 13, bubble_y + 6), last_label, font=bubble_font, fill=BG)
+        draw.ellipse((last_x - 9, last_y - 9, last_x + 9, last_y + 9), fill=BG, outline=color, width=3)
+
+
+def _draw_trend_icon(draw: ImageDraw.ImageDraw, x: int, y: int, trend_label: str, color: str) -> None:
+    """SVG viewBox karşılığı küçük vektör ok; raster kartta piksellenmeden çizilir."""
+    draw.ellipse((x, y, x + 44, y + 44), fill=BG, outline=color, width=2)
+    if "YÜKSELİŞ" in trend_label:
+        draw.line((x + 12, y + 29, x + 22, y + 18, x + 32, y + 25), fill=color, width=4, joint="curve")
+        draw.polygon(((x + 29, y + 14), (x + 36, y + 15), (x + 33, y + 22)), fill=color)
+    elif "DÜŞÜŞ" in trend_label:
+        draw.line((x + 12, y + 15, x + 22, y + 26, x + 32, y + 19), fill=color, width=4, joint="curve")
+        draw.polygon(((x + 29, y + 30), (x + 36, y + 29), (x + 33, y + 22)), fill=color)
+    else:
+        draw.line((x + 11, y + 22, x + 33, y + 22), fill=color, width=4)
+        draw.polygon(((x + 10, y + 22), (x + 16, y + 16), (x + 16, y + 28)), fill=color)
+        draw.polygon(((x + 34, y + 22), (x + 28, y + 16), (x + 28, y + 28)), fill=color)
 
 
 def _draw_asset_icon(draw: ImageDraw.ImageDraw, x: int, y: int, symbol: str, is_crypto: bool) -> None:
@@ -427,6 +525,7 @@ def save_quote_card(
     output_dir: Path,
     snapshot: dict[str, Any] | None = None,
     ohlcv: pd.DataFrame | None = None,
+    time_range: str = "1A",
 ) -> Path:
     """Hisse ve kripto için premium, mobil odaklı ortak piyasa kartı."""
     snapshot = snapshot or {}
@@ -463,7 +562,8 @@ def save_quote_card(
     name_font = _font(22, bold=True)
     name_text = full_name if len(full_name) <= 27 else full_name[:24] + "..."
     draw.text((184, y + 78), name_text, font=name_font, fill=MUTED)
-    draw.text((184, y + 121), number(quote.price), font=_font(53, bold=True), fill=TEXT)
+    price_fill = "#E8FFF2" if trend == GREEN else ("#FFF0F1" if trend == RED else TEXT)
+    draw.text((184, y + 121), number(quote.price), font=_font(53, bold=True), fill=price_fill)
     draw.text((184, y + 178), quote.currency, font=_font(19, bold=True), fill=MUTED)
     status_text, status_color = _market_status(is_crypto)
     status_font = _font(18, bold=True)
@@ -494,7 +594,9 @@ def save_quote_card(
         ("ÖNCEKİ KAPANIŞ", _price_or_dash(previous_close), GOLD),
     ]
     for index, (label, value, accent) in enumerate(grid[:3]):
-        _metric(draw, (x_positions[index], y, x_positions[index] + cell_width, y + cell_height), label, value, accent, 26)
+        cell_fill = GREEN_TINT if label == "GÜN İÇİ YÜKSEK" else (RED_TINT if label == "GÜN İÇİ DÜŞÜK" else PANEL)
+        label_color = GREEN if label == "GÜN İÇİ YÜKSEK" else (RED if label == "GÜN İÇİ DÜŞÜK" else MUTED)
+        _metric(draw, (x_positions[index], y, x_positions[index] + cell_width, y + cell_height), label, value, accent, 26, fill=cell_fill, label_fill=label_color)
     second_y = y + cell_height + 18
     for index, (label, value, accent) in enumerate(grid[3:]):
         _metric(draw, (x_positions[index], second_y, x_positions[index] + cell_width, second_y + cell_height), label, value, accent, 25)
@@ -507,17 +609,18 @@ def save_quote_card(
     graph_height = 342
     _panel(draw, (56, y, WIDTH - 56, y + graph_height), fill=PANEL, outline=BORDER, radius=24)
     draw.text((84, y + 20), "FİYAT AKIŞI", font=_font(21, bold=True), fill=GREEN)
-    _draw_time_tabs(draw, 757, y + 15, selected="1G")
-    closes = ohlcv["close"].tail(60) if ohlcv is not None and "close" in ohlcv else None
-    if closes is not None and not closes.dropna().empty:
-        _draw_sparkline(image, draw, (86, y + 82, WIDTH - 86, y + 282), closes, trend, number(quote.price))
-    else:
-        draw.text((86, y + 130), "Grafik için OHLCV verisi bulunamadı.", font=_font(23), fill=MUTED)
+    _draw_time_tabs(draw, 757, y + 15, selected=time_range)
+    try:
+        _draw_candlesticks(image, draw, (86, y + 82, WIDTH - 86, y + 282), ohlcv, number(quote.price))
+    except ValueError as exc:
+        LOGGER.error("Piyasa kartı OHLC/candlestick verisi kullanılamadı: %s", exc)
+        draw.text((86, y + 130), "Grafik verisi geçici olarak kullanılamadı.", font=_font(23, bold=True), fill=RED)
     y += graph_height + 22
 
     # Basit sinyal/trend özeti, karar önerisi vermeden yönü görselleştirir.
     _panel(draw, (56, y, WIDTH - 56, y + 82), fill=GREEN_DARK if trend_accent == GREEN else (RED_DARK if trend_accent == RED else PANEL_ALT), outline=trend_accent, radius=22)
-    draw.text((84, y + 25), "TREND", font=_font(18, bold=True), fill=MUTED)
+    _draw_trend_icon(draw, 78, y + 19, trend_label, trend_accent)
+    draw.text((138, y + 25), "TREND", font=_font(18, bold=True), fill=GREEN)
     trend_width = _text_width(draw, trend_label, _font(27, bold=True))
     draw.text((WIDTH - 86 - trend_width, y + 20), trend_label, font=_font(27, bold=True), fill=trend_accent)
 
