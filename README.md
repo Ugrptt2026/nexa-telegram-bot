@@ -42,6 +42,8 @@ Botta `/start`, `/yardim` ve `/menu` komutlarını deneyin. Örnek görsel kartl
 
 NEXA, webhook startup sırasında Telegram Bot API’nin `setMyCommands` metodu ile kısa komut listesini otomatik kaydeder. Kullanıcı mesaj alanına `/` yazdığında Telegram öneri listesinde `/hisse`, `/kripto`, `/teknik`, `/grafik`, `/temel`, `/endeks`, `/ozet`, `/piyasa`, `/fng`, `/tara`, `/kap`, `/alarm`, `/izleme` ve `/portfoy` komutlarını açıklamalarıyla görür. Liste her Render deploy veya servis yeniden başlatmasında tekrar senkronize edilir.
 
+Ana menüdeki BIST Hisse, Kripto, Portföy, Alarmlar, İzleme Listesi ve Yardım butonları yalnızca görsel kart açmaz. Kartın hemen altında aynı bölümün yazılı komut listesi gönderilir; her satır Telegram’ın `copy_text` özelliğiyle tek dokunuşta panoya kopyalanabilir. Böylece kullanıcı komutu seçip mesaj alanına yapıştırarak hızlıca çalıştırabilir.
+
 ## Test
 
 ```bash

@@ -10,8 +10,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Any, Callable
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
-from telegram import BotCommand
+from telegram import BotCommand, CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import (
     Application,
@@ -178,6 +177,39 @@ def back_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def command_copy_keyboard(commands: list[tuple[str, str]]) -> InlineKeyboardMarkup:
+    """Komutları Telegram’da tek dokunuşla panoya kopyalanabilir butonlara çevirir."""
+    rows = []
+    for command, _ in commands:
+        rows.append([InlineKeyboardButton(command, copy_text=CopyTextButton(command))])
+    return InlineKeyboardMarkup(rows)
+
+
+async def _reply_command_list(target: Any, title: str, commands: list[tuple[str, str]]) -> None:
+    """Görsel kartın altında komutları yazılı ve kopyalanabilir biçimde gönderir."""
+    lines = [f"NEXA | {title} KOMUTLARI", "Komutu kopyalayıp mesaj alanına yapıştırın ve gönderin.", ""]
+    lines.extend(f"{command} — {description}" for command, description in commands)
+    await target.reply_text("\n".join(lines), reply_markup=command_copy_keyboard(commands))
+
+
+HELP_COMMANDS = [
+    ("/hisse THYAO", "BIST fiyat ve mum kartı"),
+    ("/kripto BTC", "Kripto fiyat ve mum kartı"),
+    ("/teknik hisse THYAO", "RSI, MACD ve seviyeler"),
+    ("/grafik kripto BTC", "Detaylı fiyat grafiği"),
+    ("/temel THYAO", "F/K, PD/DD ve temettü"),
+    ("/endeks XU100", "BIST 100 görünümü"),
+    ("/ozet", "Günlük piyasa özeti"),
+    ("/piyasa", "Kripto piyasa görünümü"),
+    ("/fng", "Fear & Greed göstergesi"),
+    ("/tara kripto", "Yükselen ve düşenler"),
+    ("/kap", "Public KAP gözlemi"),
+    ("/alarm liste", "Aktif alarmlar"),
+    ("/izleme liste", "İzleme listesi"),
+    ("/portfoy", "Sanal portföy özeti"),
+]
+
+
 def guide_keyboard(key: str) -> InlineKeyboardMarkup:
     """Bölüm kartında ilgili bölümlere ve ana menüye hızlı geçiş sağlar."""
     related = {
@@ -264,6 +296,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             caption="NEXA | Komut rehberi",
             reply_markup=main_menu(),
         )
+        await _reply_command_list(update.message, "YARDIM", HELP_COMMANDS)
 
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -717,6 +750,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             caption="NEXA | Komut rehberi",
             reply_markup=back_keyboard(),
         )
+        await _reply_command_list(query.message, "YARDIM", HELP_COMMANDS)
         return
 
     guide = MENU_GUIDES.get(key)
@@ -734,6 +768,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             caption=f"NEXA | {guide['title']}",
             reply_markup=guide_keyboard(key),
         )
+        await _reply_command_list(query.message, guide["title"], guide["commands"])
         return
 
     label = MENU_LABELS.get(key, "NEXA")
