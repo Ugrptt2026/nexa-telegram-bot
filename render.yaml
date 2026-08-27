@@ -3,8 +3,8 @@ services:
     name: nexa-telegram-bot
     runtime: python
     plan: free
-    buildCommand: unzip -q nexa-deploy.zip -d .nexa-src && pip install ./.nexa-src
-    startCommand: cd .nexa-src && uvicorn nexa.web:app --host 0.0.0.0 --port $PORT
+    buildCommand: pip install .
+    startCommand: uvicorn nexa.web:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: TELEGRAM_BOT_TOKEN
@@ -25,3 +25,6 @@ services:
         value: "/tmp/nexa.sqlite3"
       - key: LOG_LEVEL
         value: "INFO"
+
+# Secrets are intentionally managed in Render Environment and are never committed.
+# The GitHub Actions workflow invokes /internal/cron every five minutes using NEXA_CRON_SECRET.
