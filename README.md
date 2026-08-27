@@ -38,6 +38,10 @@ python main.py
 
 Botta `/start`, `/yardim` ve `/menu` komutlarını deneyin. Örnek görsel kartlar `docs/previews/` klasöründe bulunur.
 
+## Telegram hızlı komut menüsü
+
+NEXA, webhook startup sırasında Telegram Bot API’nin `setMyCommands` metodu ile kısa komut listesini otomatik kaydeder. Kullanıcı mesaj alanına `/` yazdığında Telegram öneri listesinde `/hisse`, `/kripto`, `/teknik`, `/grafik`, `/temel`, `/endeks`, `/ozet`, `/piyasa`, `/fng`, `/tara`, `/kap`, `/alarm`, `/izleme` ve `/portfoy` komutlarını açıklamalarıyla görür. Liste her Render deploy veya servis yeniden başlatmasında tekrar senkronize edilir.
+
 ## Test
 
 ```bash

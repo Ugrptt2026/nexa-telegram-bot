@@ -11,7 +11,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from telegram import Update
 from telegram.error import TelegramError
 
-from .bot import build_application
+from .bot import build_application, configure_command_menu
 from .config import Settings
 from .scheduler import check_active_alarms, check_kap_updates
 
@@ -30,6 +30,7 @@ async def _start_telegram_with_retry() -> None:
         try:
             await candidate.initialize()
             await candidate.start()
+            await configure_command_menu(candidate.bot)
             if settings.app_base_url:
                 webhook_url = f"{settings.app_base_url.rstrip('/')}/telegram/webhook"
                 await candidate.bot.set_webhook(

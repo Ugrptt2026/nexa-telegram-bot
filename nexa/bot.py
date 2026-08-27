@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand
+from telegram.error import TelegramError
 from telegram.ext import (
     Application,
     ApplicationBuilder,
@@ -57,6 +59,37 @@ from .visual_cards import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+NEXA_COMMANDS = [
+    BotCommand("start", "NEXA başlangıç menüsü"),
+    BotCommand("yardim", "Tüm komutları göster"),
+    BotCommand("hisse", "BIST hisse piyasa kartı"),
+    BotCommand("kripto", "Kripto piyasa kartı"),
+    BotCommand("teknik", "RSI, MACD ve seviyeler"),
+    BotCommand("grafik", "Mum fiyat grafiği"),
+    BotCommand("temel", "F/K, PD/DD ve temettü"),
+    BotCommand("endeks", "Endeks, döviz ve altın"),
+    BotCommand("ozet", "Günlük piyasa özeti"),
+    BotCommand("piyasa", "Kripto piyasa görünümü"),
+    BotCommand("fng", "Fear & Greed göstergesi"),
+    BotCommand("tara", "Yükselen ve düşenleri tara"),
+    BotCommand("kap", "Public KAP gözlemi"),
+    BotCommand("alarm", "Fiyat ve değişim alarmı"),
+    BotCommand("izleme", "İzleme listesi"),
+    BotCommand("portfoy", "Sanal portföy"),
+]
+
+
+async def configure_command_menu(bot: Any) -> bool:
+    """Telegram mesaj kutusunda / yazılınca görünen NEXA komut menüsünü kurar."""
+    try:
+        await bot.set_my_commands(NEXA_COMMANDS)
+        LOGGER.info("Telegram komut menüsü ayarlandı: %d komut", len(NEXA_COMMANDS))
+        return True
+    except TelegramError:
+        LOGGER.warning("Telegram komut menüsü ayarlanamadı", exc_info=True)
+        return False
 
 
 def main_menu() -> InlineKeyboardMarkup:
