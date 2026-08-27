@@ -10,7 +10,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Any, Callable
 
-from telegram import BotCommand, CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import BotCommand, BotCommandScopeChat, CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import (
     Application,
@@ -43,6 +43,7 @@ from .texts import MENU_LABELS
 from .visual_cards import (
     save_alarms_card,
     save_daily_summary_card,
+    save_depth_card,
     save_fear_greed_card,
     save_fundamentals_card,
     save_global_market_card,
@@ -60,24 +61,45 @@ from .visual_cards import (
 LOGGER = logging.getLogger(__name__)
 
 
-NEXA_COMMANDS = [
+ROOT_COMMANDS = [
     BotCommand("start", "NEXA başlangıç menüsü"),
-    BotCommand("yardim", "Tüm komutları göster"),
+    BotCommand("yardim", "BIST ve kripto rehberi"),
+    BotCommand("hisse", "BIST tarafına geç"),
+    BotCommand("kripto", "Kripto tarafına geç"),
+]
+
+BIST_COMMANDS = [
+    *ROOT_COMMANDS[:2],
     BotCommand("hisse", "BIST hisse piyasa kartı"),
-    BotCommand("kripto", "Kripto piyasa kartı"),
-    BotCommand("teknik", "RSI, MACD ve seviyeler"),
-    BotCommand("grafik", "Mum fiyat grafiği"),
-    BotCommand("temel", "F/K, PD/DD ve temettü"),
-    BotCommand("endeks", "Endeks, döviz ve altın"),
-    BotCommand("ozet", "Günlük piyasa özeti"),
+    BotCommand("teknik", "BIST RSI, MACD ve seviyeler"),
+    BotCommand("grafik", "BIST mum fiyat grafiği"),
+    BotCommand("temel", "BIST F/K, PD/DD, temettü"),
+    BotCommand("endeks", "BIST endeks, döviz, altın"),
+    BotCommand("ozet", "BIST günlük piyasa özeti"),
+    BotCommand("derinlik", "BIST derinlik durumu"),
+    BotCommand("tara", "BIST yükselen ve düşenler"),
+    BotCommand("kap", "BIST public KAP gözlemi"),
+    BotCommand("alarm", "BIST fiyat alarmı"),
+    BotCommand("izleme", "BIST izleme listesi"),
+    BotCommand("portfoy", "Sanal portföy özeti"),
+]
+
+CRYPTO_COMMANDS = [
+    *ROOT_COMMANDS[:2],
+    BotCommand("kripto", "Kripto fiyat kartı"),
+    BotCommand("teknik", "Kripto RSI, MACD ve seviyeler"),
+    BotCommand("grafik", "Kripto mum fiyat grafiği"),
     BotCommand("piyasa", "Kripto piyasa görünümü"),
     BotCommand("fng", "Fear & Greed göstergesi"),
-    BotCommand("tara", "Yükselen ve düşenleri tara"),
-    BotCommand("kap", "Public KAP gözlemi"),
-    BotCommand("alarm", "Fiyat ve değişim alarmı"),
-    BotCommand("izleme", "İzleme listesi"),
-    BotCommand("portfoy", "Sanal portföy"),
+    BotCommand("derinlik", "Kripto emir defteri"),
+    BotCommand("tara", "Kripto yükselen ve düşenler"),
+    BotCommand("alarm", "Kripto fiyat alarmı"),
+    BotCommand("izleme", "Kripto izleme listesi"),
+    BotCommand("portfoy", "Sanal portföy özeti"),
 ]
+
+# Geriye dönük import/test uyumluluğu; global Telegram menüsü ROOT_COMMANDS kullanır.
+NEXA_COMMANDS = ROOT_COMMANDS
 
 
 MENU_GUIDES = {
@@ -89,6 +111,7 @@ MENU_GUIDES = {
             ("/teknik hisse THYAO", "RSI, MACD, seviyeler"),
             ("/temel THYAO", "F/K, PD/DD, temettü"),
             ("/grafik hisse THYAO", "Detaylı fiyat grafiği"),
+            ("/derinlik THYAO", "BIST derinlik durumu"),
             ("/endeks XU100", "BIST 100 görünümü"),
         ],
         "accent": "#57E389",
@@ -100,6 +123,7 @@ MENU_GUIDES = {
             ("/kripto BTC", "Fiyat + mum kartı"),
             ("/teknik kripto BTC", "RSI, MACD, seviyeler"),
             ("/grafik kripto BTC", "Detaylı fiyat grafiği"),
+            ("/derinlik BTC", "Gerçek emir defteri"),
             ("/tara kripto", "Yükselen / düşenler"),
             ("/fng", "Fear & Greed göstergesi"),
         ],
@@ -129,23 +153,140 @@ MENU_GUIDES = {
     },
     "watchlist": {
         "title": "İZLEME LİSTESİ",
-        "message": "Takip etmek istediğiniz hisse ve coinleri ekleyin. Listeyi tek komutla görüntüleyebilir veya sembolü silebilirsiniz.",
+        "message": "Takip etmek istediğiniz varlığı ekleyin. Listeyi tek komutla görüntüleyebilir veya sembolü silebilirsiniz.",
         "commands": [
-            ("/izleme ekle hisse THYAO", "Hisse ekle"),
-            ("/izleme ekle kripto BTC", "Coin ekle"),
             ("/izleme liste", "Listenizi görüntüle"),
-            ("/izleme sil hisse THYAO", "Sembolü kaldır"),
+            ("/izleme ekle hisse THYAO", "BIST varlığı ekle"),
+            ("/izleme sil hisse THYAO", "BIST varlığı kaldır"),
         ],
         "accent": "#5BD7F4",
     },
 }
 
 
-async def configure_command_menu(bot: Any) -> bool:
-    """Telegram mesaj kutusunda / yazılınca görünen NEXA komut menüsünü kurar."""
+DOMAIN_SHARED_GUIDES = {
+    "bist": {
+        "portfolio": {
+            "title": "PORTFÖY · BIST",
+            "message": "BIST işleminizi sanal olarak kaydedin. Ardından /portfoy ile güncel değer ve kâr/zarar özetini görün.",
+            "commands": [
+                ("/portfoy", "BIST portföy özeti"),
+                ("/portfoy al hisse THYAO 10 300", "BIST alım kaydı"),
+                ("/portfoy sat hisse THYAO 5 320", "BIST satış kaydı"),
+            ],
+            "accent": "#F3C76B",
+        },
+        "alerts": {
+            "title": "ALARMLAR · BIST",
+            "message": "BIST hisseniz için fiyat eşiği belirleyin. Aktif alarmı listeleyebilir veya numarasıyla silebilirsiniz.",
+            "commands": [
+                ("/alarm ekle hisse THYAO ust 350", "BIST fiyat üstü alarmı"),
+                ("/alarm liste", "Aktif BIST alarmları"),
+                ("/alarm sil 12", "Alarmı pasifleştir"),
+            ],
+            "accent": "#F3C76B",
+        },
+        "watchlist": {
+            "title": "İZLEME LİSTESİ · BIST",
+            "message": "Takip etmek istediğiniz BIST hisselerini ekleyin; listeyi açın veya sembolü kaldırın.",
+            "commands": [
+                ("/izleme ekle hisse THYAO", "BIST hissesi ekle"),
+                ("/izleme liste", "BIST listenizi gör"),
+                ("/izleme sil hisse THYAO", "BIST hissesini kaldır"),
+            ],
+            "accent": "#5BD7F4",
+        },
+    },
+    "crypto": {
+        "portfolio": {
+            "title": "PORTFÖY · KRİPTO",
+            "message": "Kripto işleminizi sanal olarak kaydedin. Ardından /portfoy ile güncel değer ve kâr/zarar özetini görün.",
+            "commands": [
+                ("/portfoy", "Kripto portföy özeti"),
+                ("/portfoy al kripto BTC 0.1 65000", "Kripto alım kaydı"),
+                ("/portfoy sat kripto BTC 0.05 70000", "Kripto satış kaydı"),
+            ],
+            "accent": "#F3C76B",
+        },
+        "alerts": {
+            "title": "ALARMLAR · KRİPTO",
+            "message": "Kripto varlığınız için fiyat veya yüzde değişim eşiği belirleyin. Aktif alarmı listeleyebilir veya silebilirsiniz.",
+            "commands": [
+                ("/alarm ekle kripto BTC ust 70000", "Kripto fiyat alarmı"),
+                ("/alarm ekle kripto BTC degisim 5", "%5 değişim alarmı"),
+                ("/alarm liste", "Aktif kripto alarmları"),
+            ],
+            "accent": "#F3C76B",
+        },
+        "watchlist": {
+            "title": "İZLEME LİSTESİ · KRİPTO",
+            "message": "Takip etmek istediğiniz coinleri ekleyin; listeyi açın veya sembolü kaldırın.",
+            "commands": [
+                ("/izleme ekle kripto BTC", "Kripto ekle"),
+                ("/izleme liste", "Kripto listenizi gör"),
+                ("/izleme sil kripto BTC", "Kriptoyu kaldır"),
+            ],
+            "accent": "#5BD7F4",
+        },
+    },
+}
+
+
+def active_menu_guide(key: str, domain: str | None = None) -> dict[str, object] | None:
+    if domain in DOMAIN_SHARED_GUIDES and key in DOMAIN_SHARED_GUIDES[domain]:
+        return DOMAIN_SHARED_GUIDES[domain][key]
+    return MENU_GUIDES.get(key)
+
+
+def help_commands_for_domain(domain: str | None) -> list[tuple[str, str]]:
+    if domain == "bist":
+        return [
+            ("/hisse THYAO", "BIST fiyat ve mum kartı"),
+            ("/teknik hisse THYAO", "BIST RSI, MACD, seviyeler"),
+            ("/grafik hisse THYAO", "BIST detaylı grafik"),
+            ("/temel THYAO", "BIST F/K, PD/DD, temettü"),
+            ("/endeks XU100", "BIST endeks görünümü"),
+            ("/derinlik THYAO", "BIST Level 2 durumu"),
+            ("/alarm ekle hisse THYAO ust 350", "BIST fiyat alarmı"),
+            ("/izleme ekle hisse THYAO", "BIST izleme listesine ekle"),
+            ("/portfoy", "BIST portföy özeti"),
+        ]
+    if domain == "crypto":
+        return [
+            ("/kripto BTC", "Kripto fiyat ve mum kartı"),
+            ("/teknik kripto BTC", "Kripto RSI, MACD, seviyeler"),
+            ("/grafik kripto BTC", "Kripto detaylı grafik"),
+            ("/piyasa", "Kripto piyasa görünümü"),
+            ("/fng", "Fear & Greed göstergesi"),
+            ("/derinlik BTC", "Gerçek kripto emir defteri"),
+            ("/alarm ekle kripto BTC ust 70000", "Kripto fiyat alarmı"),
+            ("/izleme ekle kripto BTC", "Kripto izleme listesine ekle"),
+            ("/portfoy", "Kripto portföy özeti"),
+        ]
+    return HELP_COMMANDS
+
+
+async def _activate_domain(context: ContextTypes.DEFAULT_TYPE, chat_id: int | None, domain: str | None) -> None:
+    """Kullanıcının bulunduğu BIST/KRİPTO alanına göre chat-scope menüyü senkronize eder."""
+    if domain not in {"bist", "crypto"} or chat_id is None:
+        return
+    if context.user_data.get("nexa_domain") == domain:
+        return
+    context.user_data["nexa_domain"] = domain
+    await configure_command_menu(context.bot, chat_id=chat_id, domain=domain)
+
+
+async def configure_command_menu(bot: Any, chat_id: int | None = None, domain: str | None = None) -> bool:
+    """Global veya chat-scope BIST/KRİPTO Telegram komut menüsünü kurar."""
+    commands = BIST_COMMANDS if domain == "bist" else CRYPTO_COMMANDS if domain == "crypto" else ROOT_COMMANDS
+    scope = BotCommandScopeChat(chat_id=chat_id) if chat_id is not None else None
     try:
-        await bot.set_my_commands(NEXA_COMMANDS)
-        LOGGER.info("Telegram komut menüsü ayarlandı: %d komut", len(NEXA_COMMANDS))
+        if scope is None:
+            await bot.set_my_commands(commands)
+        else:
+            await bot.set_my_commands(commands, scope=scope)
+        scope_label = f"chat={chat_id}, domain={domain or 'root'}" if chat_id is not None else "global root"
+        LOGGER.info("Telegram komut menüsü ayarlandı: %d komut (%s)", len(commands), scope_label)
         return True
     except TelegramError:
         LOGGER.warning("Telegram komut menüsü ayarlanamadı", exc_info=True)
@@ -213,13 +354,15 @@ HELP_COMMANDS = [
 def guide_keyboard(key: str) -> InlineKeyboardMarkup:
     """Bölüm kartında ilgili bölümlere ve ana menüye hızlı geçiş sağlar."""
     related = {
-        "stock": [("Kripto", "crypto"), ("Teknik", "help")],
-        "crypto": [("BIST Hisse", "stock"), ("Fear & Greed", "help")],
+        "stock": [],
+        "crypto": [],
         "portfolio": [("Alarmlar", "alerts"), ("İzleme Listesi", "watchlist")],
         "alerts": [("Portföy", "portfolio"), ("İzleme Listesi", "watchlist")],
         "watchlist": [("Portföy", "portfolio"), ("Alarmlar", "alerts")],
     }.get(key, [])
-    rows = [[InlineKeyboardButton(label, callback_data=f"menu:{target}") for label, target in related]]
+    rows = []
+    if related:
+        rows.append([InlineKeyboardButton(label, callback_data=f"menu:{target}") for label, target in related])
     rows.append([InlineKeyboardButton("Yardım", callback_data="menu:help"), InlineKeyboardButton("Ana menü", callback_data="menu:home")])
     return InlineKeyboardMarkup(rows)
 
@@ -273,6 +416,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     db: Database = context.application.bot_data["db"]
+    context.user_data["nexa_domain"] = None
+    await configure_command_menu(context.bot, chat_id=update.effective_chat.id)
     user = update.effective_user
     db.upsert_user(
         chat_id=update.effective_chat.id,
@@ -296,11 +441,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             caption="NEXA | Komut rehberi",
             reply_markup=main_menu(),
         )
-        await _reply_command_list(update.message, "YARDIM", HELP_COMMANDS)
+        await _reply_command_list(update.message, "YARDIM", help_commands_for_domain(context.user_data.get("nexa_domain")))
 
 
 async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.message:
+        context.user_data["nexa_domain"] = None
+        if update.effective_chat:
+            await configure_command_menu(context.bot, chat_id=update.effective_chat.id)
         name = update.effective_user.first_name if update.effective_user else "kullanıcı"
         await _reply_card(
             update.message,
@@ -330,6 +478,8 @@ async def _reply_quote(
         return
 
     symbol = context.args[0].upper()
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    await _activate_domain(context, chat_id, "bist" if asset_type == "stock" else "crypto")
     try:
         if asset_type == "stock":
             client = context.application.bot_data["bist"]
@@ -400,6 +550,7 @@ async def technical_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     try:
         asset_type = parse_asset_type(context.args[0])
+        await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "bist" if asset_type == "stock" else "crypto")
         symbol = canonical_symbol(asset_type, context.args[1])
         client = context.application.bot_data["bist" if asset_type == "stock" else "binance"]
         if asset_type == "stock":
@@ -427,6 +578,7 @@ async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
     try:
         asset_type = parse_asset_type(context.args[0])
+        await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "bist" if asset_type == "stock" else "crypto")
         symbol = canonical_symbol(asset_type, context.args[1])
         client = context.application.bot_data["bist" if asset_type == "stock" else "binance"]
         if asset_type == "stock":
@@ -456,6 +608,7 @@ async def fundamentals_command(update: Update, context: ContextTypes.DEFAULT_TYP
         await _reply_notice(update, "KOMUT KULLANIMI", "Kullanım: /temel THYAO", slug="usage_temel", accent="#F3C76B")
         return
     try:
+        await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "bist")
         symbol = canonical_symbol("stock", context.args[0])
         data = await asyncio.to_thread(context.application.bot_data["bist"].get_fundamentals, symbol)
     except (MarketDataError, ValueError) as exc:
@@ -471,6 +624,7 @@ async def fundamentals_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def crypto_market_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "crypto")
     try:
         data = await asyncio.to_thread(context.application.bot_data["coingecko"].get_global)
     except MarketDataError as exc:
@@ -486,6 +640,7 @@ async def crypto_market_command(update: Update, context: ContextTypes.DEFAULT_TY
 async def fear_greed_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "crypto")
     try:
         index = await asyncio.to_thread(context.application.bot_data["alternative"].get_fear_greed)
     except MarketDataError as exc:
@@ -501,13 +656,17 @@ async def fear_greed_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
-    asset_type = "crypto"
+    asset_type = context.user_data.get("nexa_domain")
     if context.args:
         try:
             asset_type = parse_asset_type(context.args[0])
         except ValueError as exc:
             await _reply_notice(update, "KOMUT KULLANIMI", str(exc), slug="scan_usage", accent="#F3C76B")
             return
+    if asset_type not in {"stock", "crypto"}:
+        await _reply_notice(update, "TARAMA KULLANIMI", "/tara hisse veya /tara kripto yazın; seçtiğiniz alana göre liste hazırlanır.", slug="scan_usage", accent="#F3C76B")
+        return
+    await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, asset_type)
     try:
         if asset_type == "crypto":
             result = await asyncio.to_thread(scan_crypto_movers, context.application.bot_data["binance"], 10)
@@ -530,6 +689,7 @@ async def scan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def daily_summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "bist")
     symbols = ["XU100", "XU030", "USDTRY", "EURTRY", "ALTIN"]
     items = []
     for symbol in symbols:
@@ -551,6 +711,7 @@ async def daily_summary_command(update: Update, context: ContextTypes.DEFAULT_TY
 async def macro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "bist")
     symbol = context.args[0] if context.args else "XU100"
     try:
         quote = await asyncio.to_thread(context.application.bot_data["macro"].get_quote, symbol)
@@ -567,6 +728,7 @@ async def macro_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 async def kap_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message:
         return
+    await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "bist")
     try:
         disclosures = await asyncio.to_thread(context.application.bot_data["kap"].fetch_recent_disclosures, 20)
     except Exception:
@@ -586,6 +748,42 @@ async def stock_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def crypto_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await _reply_quote(update, context, "crypto")
+
+
+async def depth_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """BIST’te açık erişim sınırını, kriptoda gerçek Binance kademelerini gösterir."""
+    if not update.message:
+        return
+    domain = context.user_data.get("nexa_domain")
+    asset_type = "stock" if domain == "bist" else "crypto" if domain == "crypto" else None
+    args = context.args
+    if args and args[0].lower() in {"hisse", "kripto"}:
+        asset_type = "stock" if args[0].lower() == "hisse" else "crypto"
+        args = args[1:]
+    if asset_type is None:
+        await _reply_notice(update, "DERİNLİK KULLANIMI", "/derinlik THYAO (BIST menüsünde) veya /derinlik BTC (Kripto menüsünde)", slug="depth_usage", accent="#F3C76B")
+        return
+    symbol = (args[0] if args else ("THYAO" if asset_type == "stock" else "BTC")).upper()
+    await _activate_domain(context, update.effective_chat.id if update.effective_chat else None, "bist" if asset_type == "stock" else "crypto")
+    client = context.application.bot_data["bist" if asset_type == "stock" else "binance"]
+    try:
+        quote = await asyncio.to_thread(client.get_quote, symbol)
+        if asset_type == "stock":
+            await _reply_card(
+                update.message,
+                lambda output_dir: save_depth_card(quote.symbol, "stock", output_dir, quote=quote),
+                caption=f"NEXA | {quote.symbol} BIST derinlik durumu",
+            )
+            return
+        depth = await asyncio.to_thread(client.get_depth, symbol, 10)
+        await _reply_card(
+            update.message,
+            lambda output_dir: save_depth_card(quote.symbol, "crypto", output_dir, depth=depth, quote=quote),
+            caption=f"NEXA | {quote.symbol} kripto derinliği",
+        )
+    except (MarketDataError, ValueError) as exc:
+        LOGGER.error("Derinlik verisi alınamadı: %s %s", asset_type, symbol, exc_info=True)
+        await _reply_notice(update, "DERİNLİK ALINAMADI", str(exc), slug=f"depth_error_{asset_type}", accent="#FF747D")
 
 
 async def alarm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -627,6 +825,7 @@ async def alarm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
     try:
         asset_type = parse_asset_type(context.args[1])
+        await _activate_domain(context, chat_id, asset_type)
         symbol = canonical_symbol(asset_type, context.args[2])
         condition = parse_alarm_condition(context.args[3])
         target = parse_number(context.args[4])
@@ -658,6 +857,7 @@ async def watchlist_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
     try:
         asset_type = parse_asset_type(args[1])
+        await _activate_domain(context, chat_id, asset_type)
         symbol = canonical_symbol(asset_type, args[2])
     except ValueError as exc:
         await _reply_notice(update, "İZLEME İŞLEMİ BAŞARISIZ", str(exc), slug="watch_error", accent="#FF747D")
@@ -693,6 +893,7 @@ async def portfolio_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         side = "buy" if args[0].lower() == "al" else "sell"
         asset_type = parse_asset_type(args[1])
+        await _activate_domain(context, chat_id, asset_type)
         symbol = canonical_symbol(asset_type, args[2])
         quantity = parse_number(args[3])
         price = parse_number(args[4])
@@ -735,6 +936,9 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     if not query.message:
         return
     if key == "home":
+        if update.effective_chat:
+            await configure_command_menu(context.bot, chat_id=update.effective_chat.id)
+            context.user_data["nexa_domain"] = None
         name = update.effective_user.first_name if update.effective_user else "kullanıcı"
         await _reply_card(
             query.message,
@@ -750,11 +954,16 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             caption="NEXA | Komut rehberi",
             reply_markup=back_keyboard(),
         )
-        await _reply_command_list(query.message, "YARDIM", HELP_COMMANDS)
+        await _reply_command_list(query.message, "YARDIM", help_commands_for_domain(context.user_data.get("nexa_domain")))
         return
 
-    guide = MENU_GUIDES.get(key)
+    guide = active_menu_guide(key, context.user_data.get("nexa_domain"))
     if guide:
+        domain = "bist" if key == "stock" else "crypto" if key == "crypto" else None
+        if domain:
+            context.user_data["nexa_domain"] = domain
+            if update.effective_chat:
+                await configure_command_menu(context.bot, chat_id=update.effective_chat.id, domain=domain)
         await _reply_card(
             query.message,
             lambda output_dir: save_notice_card(
@@ -797,6 +1006,7 @@ def register_handlers(application: Application, db: Database) -> None:
     application.add_handler(CommandHandler("menu", menu_command))
     application.add_handler(CommandHandler(["hisse", "stock"], stock_command))
     application.add_handler(CommandHandler(["kripto", "crypto"], crypto_command))
+    application.add_handler(CommandHandler("derinlik", depth_command))
     application.add_handler(CommandHandler(["teknik", "analiz"], technical_command))
     application.add_handler(CommandHandler(["grafik", "chart"], chart_command))
     application.add_handler(CommandHandler(["temel", "fundamentals"], fundamentals_command))

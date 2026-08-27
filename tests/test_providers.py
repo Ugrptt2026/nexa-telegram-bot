@@ -94,3 +94,21 @@ def test_fundamentals_calculates_dividend_yield_from_rate_and_price(monkeypatch:
     )
     result = providers.YahooBistClient().get_fundamentals("THYAO")
     assert result["dividend_yield_pct"] == pytest.approx(2.27438, rel=1e-4)
+
+
+def test_binance_depth_parses_bid_ask_levels(monkeypatch) -> None:
+    client = BinanceClient()
+    monkeypatch.setattr(
+        client,
+        "_get_json",
+        lambda path, params=None: {
+            "lastUpdateId": 7,
+            "bids": [["101", "2.5"], ["100", "4.0"]],
+            "asks": [["102", "1.5"], ["103", "3.0"]],
+        },
+    )
+    depth = client.get_depth("BTC", limit=2)
+    assert depth.symbol == "BTC"
+    assert [(level.price, level.quantity) for level in depth.bids] == [(101.0, 2.5), (100.0, 4.0)]
+    assert [(level.price, level.quantity) for level in depth.asks] == [(102.0, 1.5), (103.0, 3.0)]
+    assert depth.available is True

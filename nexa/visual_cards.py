@@ -10,7 +10,7 @@ import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 
 from .formatting import date_text, number, signed_pct
-from .providers import FearGreed, Quote
+from .providers import DepthSnapshot, FearGreed, Quote
 from .technical_analysis import TechnicalSnapshot
 
 # The cards are deliberately portrait-oriented and high-resolution so Telegram can
@@ -879,6 +879,104 @@ def save_kap_card(items: list[Any], output_dir: Path) -> Path:
             _draw_wrapped(draw, (84, row_y + 50), subject, _font(21), TEXT, WIDTH - 168, line_gap=4)
     _footer(draw, height, "KAP public website", "KAP public gözlemi; yatırım tavsiyesi değildir.")
     return _save(image, output_dir, "kap_card")
+
+
+def save_depth_card(
+    symbol: str,
+    asset_type: str,
+    output_dir: Path,
+    depth: DepthSnapshot | None = None,
+    quote: Quote | None = None,
+) -> Path:
+    """Kripto için gerçek emir defteri, BIST için dürüst erişim durumu kartı."""
+    is_crypto = asset_type == "crypto"
+    title = "KRİPTO DERİNLİĞİ" if is_crypto else "BIST DERİNLİĞİ"
+    subtitle = "Gerçek alış / satış kademeleri" if depth and depth.available else "Level 2 veri erişim durumu"
+    available = bool(depth and depth.available and depth.bids and depth.asks)
+    height = 1640 if available else 1250
+    image, draw, y = _base(title, f"{symbol.upper()}  ·  {subtitle}", height=height)
+
+    hero_height = 138 if available else 172
+    _panel(draw, (56, y, WIDTH - 56, y + hero_height), fill=PANEL_ALT, outline=BORDER, radius=24)
+    status = "GERÇEK PUBLIC" if available else "KULLANILAMIYOR"
+    status_color = GREEN if available else GOLD
+    draw.ellipse((84, y + 31, 146, y + 93), fill=GREEN_DARK if available else RED_TINT, outline=status_color, width=2)
+    # Use an ASCII-safe glyph so every Telegram client renders the icon consistently.
+    draw.text((103, y + 42), "B", font=_font(28, bold=True), fill=status_color)
+    draw.text((176, y + 27), symbol.upper(), font=_font(30, bold=True), fill=ORANGE if is_crypto else GREEN)
+    draw.text((176, y + 70), "Binance Spot order book" if available else "Borsa İstanbul Level 2", font=_font(19), fill=MUTED)
+    status_font = _font(17, bold=True)
+    status_width = _text_width(draw, status, status_font) + 28
+    draw.rounded_rectangle((WIDTH - 86 - status_width, y + 42, WIDTH - 86, y + 78), radius=18, fill=GREEN_DARK if available else RED_TINT, outline=status_color, width=2)
+    draw.text((WIDTH - 72 - status_width, y + 51), status, font=status_font, fill=status_color)
+    y += hero_height + 20
+
+    if not available:
+        _panel(draw, (56, y, WIDTH - 56, y + 270), fill=PANEL_ALT, outline=GOLD, radius=24)
+        draw.rectangle((56, y, 70, y + 270), fill=GOLD)
+        message = (
+            "Bu ücretsiz veri katmanında BIST’in gerçek Level 2 emir kademesi bulunmuyor. "
+            "NEXA sahte alış/satış satırı üretmez. Gerçek derinlik için Borsa İstanbul veya yetkili veri dağıtıcısı erişimi gerekir."
+        )
+        _draw_wrapped(draw, (102, y + 32), message, _font(25, bold=True), TEXT, WIDTH - 168, line_gap=9)
+        y += 300
+        if quote:
+            draw.text((56, y), "MEVCUT FİYAT ÖZETİ", font=_font(22, bold=True), fill=GREEN)
+            y += 42
+            _metric(draw, (56, y, 298, y + 112), "SON FİYAT", number(quote.price), CYAN, 27)
+            _metric(draw, (316, y, 558, y + 112), "DEĞİŞİM", signed_pct(quote.change_pct), GREEN if (quote.change_pct or 0) >= 0 else RED, 25)
+            _metric(draw, (576, y, 820, y + 112), "HACİM", _compact(quote.volume), ORANGE, 24)
+        _footer(draw, height, "BIST public fiyat katmanı", "Gerçek Level 2 kademesi gösterilmemektedir.")
+        return _save(image, output_dir, f"depth_{asset_type}_{symbol.lower()}")
+
+    bid_qty_total = sum(level.quantity for level in depth.bids)
+    ask_qty_total = sum(level.quantity for level in depth.asks)
+    best_bid = depth.bids[0].price
+    best_ask = depth.asks[0].price
+    spread = best_ask - best_bid
+    imbalance = ((bid_qty_total - ask_qty_total) / (bid_qty_total + ask_qty_total) * 100) if bid_qty_total + ask_qty_total else 0.0
+    _metric(draw, (56, y, 298, y + 112), "EN İYİ ALIŞ", number(best_bid), GREEN, 26, fill=GREEN_TINT, label_fill=GREEN)
+    _metric(draw, (316, y, 558, y + 112), "EN İYİ SATIŞ", number(best_ask), RED, 26, fill=RED_TINT, label_fill=RED)
+    _metric(draw, (576, y, 802, y + 112), "SPREAD", number(spread), GOLD, 25, fill=PANEL)
+    _metric(draw, (820, y, 1024, y + 112), "DENGE", signed_pct(imbalance), CYAN, 23, fill=PANEL)
+    y += 138
+
+    draw.text((56, y), "EMİR DEFTERİ · İLK 10 KADEME", font=_font(24, bold=True), fill=GREEN)
+    y += 43
+    col_gap = 20
+    col_width = (WIDTH - 112 - col_gap) // 2
+    left_x = 56
+    right_x = left_x + col_width + col_gap
+    header_height = 42
+    for x, heading, color in ((left_x, "ALIŞLAR  ·  BID", GREEN), (right_x, "SATIŞLAR  ·  ASK", RED)):
+        _panel(draw, (x, y, x + col_width, y + header_height), fill=PANEL_ALT, outline=color, radius=15)
+        draw.text((x + 20, y + 11), heading, font=_font(18, bold=True), fill=color)
+    y += header_height + 10
+
+    def draw_side(x: int, levels: tuple, color: str, tint: str, label: str) -> None:
+        max_qty = max((level.quantity for level in levels), default=1.0)
+        row_height = 72
+        for index in range(10):
+            level = levels[index] if index < len(levels) else None
+            row_y = y + index * (row_height + 8)
+            _panel(draw, (x, row_y, x + col_width, row_y + row_height), fill=tint, outline=BORDER, radius=15)
+            draw.text((x + 18, row_y + 12), f"{index + 1:02d}", font=_font(17, bold=True), fill=MUTED)
+            if level is None:
+                draw.text((x + 70, row_y + 22), "—", font=_font(22, bold=True), fill=MUTED)
+                continue
+            bar_width = int((col_width - 104) * min(1.0, level.quantity / max_qty))
+            draw.rounded_rectangle((x + 68, row_y + 53, x + 68 + bar_width, row_y + 62), radius=4, fill=color)
+            price_text = number(level.price)
+            qty_text = number(level.quantity)
+            draw.text((x + 70, row_y + 10), price_text, font=_font(21, bold=True), fill=color)
+            qty_width = _text_width(draw, qty_text, _font(18, bold=True))
+            draw.text((x + col_width - 18 - qty_width, row_y + 13), qty_text, font=_font(18, bold=True), fill=TEXT)
+            draw.text((x + col_width - 18 - _text_width(draw, label, _font(13)), row_y + 42), label, font=_font(13), fill=MUTED)
+
+    draw_side(left_x, depth.bids, GREEN, GREEN_TINT, "MİKTAR")
+    draw_side(right_x, depth.asks, RED, RED_TINT, "MİKTAR")
+    _footer(draw, height, depth.source, depth.note or "Public emir defteri; yatırım tavsiyesi değildir.")
+    return _save(image, output_dir, f"depth_{asset_type}_{symbol.lower()}")
 
 
 def save_notice_card(

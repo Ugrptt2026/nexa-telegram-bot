@@ -48,6 +48,23 @@ class FearGreed:
     source: str = "Alternative.me"
 
 
+@dataclass(frozen=True, slots=True)
+class OrderBookLevel:
+    price: float
+    quantity: float
+
+
+@dataclass(frozen=True, slots=True)
+class DepthSnapshot:
+    symbol: str
+    bids: tuple[OrderBookLevel, ...]
+    asks: tuple[OrderBookLevel, ...]
+    as_of: datetime | None
+    source: str
+    available: bool = True
+    note: str | None = None
+
+
 def normalize_bist_symbol(symbol: str) -> str:
     """Kullanıcı sembolünü Yahoo BIST biçimine dönüştürür."""
     cleaned = symbol.strip().upper().replace(" ", "")
@@ -128,6 +145,38 @@ class BinanceClient(_HttpProvider):
                 "low": _as_float(payload.get("lowPrice")),
                 "previous_close": _as_float(payload.get("prevClosePrice")),
             },
+        )
+
+    def get_depth(self, symbol: str, limit: int = 10) -> DepthSnapshot:
+        """Binance public order book: alış/satış kademelerini anahtarsız döndürür."""
+        if not 1 <= limit <= 100:
+            raise ValueError("depth limit 1 ile 100 arasında olmalıdır")
+        binance_symbol = normalize_binance_symbol(symbol)
+        payload = self._get_json("api/v3/depth", {"symbol": binance_symbol, "limit": limit})
+
+        def parse_levels(raw_levels: Any, side: str) -> tuple[OrderBookLevel, ...]:
+            levels: list[OrderBookLevel] = []
+            for raw in raw_levels or []:
+                if not isinstance(raw, (list, tuple)) or len(raw) < 2:
+                    continue
+                price = _as_float(raw[0])
+                quantity = _as_float(raw[1])
+                if price is not None and quantity is not None and price > 0 and quantity >= 0:
+                    levels.append(OrderBookLevel(price, quantity))
+            levels.sort(key=lambda level: level.price, reverse=side == "bid")
+            return tuple(levels[:limit])
+
+        bids = parse_levels(payload.get("bids"), "bid")
+        asks = parse_levels(payload.get("asks"), "ask")
+        if not bids or not asks:
+            raise MarketDataError(f"Emir defteri bulunamadı: {binance_symbol}")
+        return DepthSnapshot(
+            symbol=binance_symbol.removesuffix("USDT"),
+            bids=bids,
+            asks=asks,
+            as_of=datetime.now(timezone.utc),
+            source="Binance Spot public API /api/v3/depth",
+            note="Gerçek public emir defteri; limit 10 kademe.",
         )
 
     def get_ohlcv(self, symbol: str, interval: str = "1d", limit: int = 120) -> pd.DataFrame:

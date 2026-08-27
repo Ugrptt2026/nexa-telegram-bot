@@ -33,3 +33,11 @@ Final sürümde gerçek Yahoo Finance THYAO ve Binance/CoinGecko BTC kartları t
 ## Menü rehber kartları kontrolü
 
 `guide_stock.png` ve `guide_crypto.png` önizlemeleri 1080×1110 portre formatında incelendi. Her iki kartta da kısa açıklama, `NE YAPABİLİRSİNİZ?` bölümü, beş adede kadar gerçek komut örneği ve karşılarında ne işe yaradığını anlatan açıklamalar mobilde okunaklı görünüyor. BIST kartı fiyat, teknik, temel, grafik ve endeks adımlarını; Kripto kartı fiyat, teknik, grafik, tarama ve Fear & Greed adımlarını gösteriyor.
+
+## Derinlik kartları kontrolü
+
+`depth_btc.png` ve `depth_thyao.png` gerçek provider verileriyle görsel olarak incelendi. Kripto kartında 10 alış ve 10 satış kademesi, fiyat/miktar çubukları, en iyi alış-satış, spread ve kademe dengesi görünür. BIST kartı, ücretsiz/public katmanda gerçek Level 2 bulunmadığını açıkça belirtiyor ve sahte alış/satış satırı üretmeden mevcut fiyat özetini gösteriyor. Her iki kartta NEXA koyu fintech teması, renkli katmanlar ve mobil portre düzeni korunuyor.
+
+## Derinlik kartı düzeltme kontrolü
+
+Son önizlemede BTC kartının sembol ikonu tüm fontlarda güvenli `B` glifine çevrildi. Kripto kartı 1080×1640 formatında 10 alış ve 10 satış satırını footer ile çakıştırmadan gösteriyor. BIST kartı 1080×1250 formatında Level 2 erişim uyarısını ve üçlü fiyat özetini footer’dan ayrı, okunaklı biçimde gösteriyor.

@@ -44,6 +44,12 @@ NEXA, webhook startup sırasında Telegram Bot API’nin `setMyCommands` metodu 
 
 Ana menüdeki BIST Hisse, Kripto, Portföy, Alarmlar, İzleme Listesi ve Yardım butonları yalnızca görsel kart açmaz. Kartın hemen altında aynı bölümün yazılı komut listesi gönderilir; her satır Telegram’ın `copy_text` özelliğiyle tek dokunuşta panoya kopyalanabilir. Böylece kullanıcı komutu seçip mesaj alanına yapıştırarak hızlıca çalıştırabilir.
 
+## Ayrı BIST ve KRİPTO alanları
+
+BIST Hisse veya doğrudan bir BIST komutu kullanıldığında Telegram’ın chat-scope komut menüsü BIST komutlarıyla güncellenir; bu listede kripto komutları bulunmaz. Kripto butonu veya kripto komutu kullanıldığında aynı sohbetin öneri listesi kripto komutlarına geçer ve BIST komutlarını göstermez. `/start` ve `/menu` tarafsız ana menüye dönerek iki alanı yeniden seçmenizi sağlar.
+
+Her iki alanda `/derinlik` komutu bulunur. Kripto tarafında bu komut Binance Spot public `/api/v3/depth` endpointinden ilk 10 gerçek alış/satış kademesini, en iyi alış-satış fiyatını, spread’i ve kademe dengesini gösterir. BIST tarafında ücretsiz/public katmanda gerçek Level 2 emir kademesi bulunmadığı için NEXA sahte veri üretmez; bunun yerine erişim sınırını ve mevcut fiyat özetini açıkça gösterir. Kaynak araştırmasının ayrıntısı `docs/market-depth-research.md` dosyasındadır.
+
 ## Test
 
 ```bash
