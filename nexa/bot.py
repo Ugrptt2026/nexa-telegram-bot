@@ -81,6 +81,67 @@ NEXA_COMMANDS = [
 ]
 
 
+MENU_GUIDES = {
+    "stock": {
+        "title": "BIST HİSSE",
+        "message": "Bir hisse kodu yazarak başlayın. Komutu mesaj alanına gönderdiğinizde NEXA fiyat ve analiz kartını hazırlar.",
+        "commands": [
+            ("/hisse THYAO", "Fiyat + mum kartı"),
+            ("/teknik hisse THYAO", "RSI, MACD, seviyeler"),
+            ("/temel THYAO", "F/K, PD/DD, temettü"),
+            ("/grafik hisse THYAO", "Detaylı fiyat grafiği"),
+            ("/endeks XU100", "BIST 100 görünümü"),
+        ],
+        "accent": "#57E389",
+    },
+    "crypto": {
+        "title": "KRİPTO",
+        "message": "Coin sembolünü yazarak başlayın. BTC, ETH gibi sembollerle fiyat, mum grafik ve piyasa görünümünü açabilirsiniz.",
+        "commands": [
+            ("/kripto BTC", "Fiyat + mum kartı"),
+            ("/teknik kripto BTC", "RSI, MACD, seviyeler"),
+            ("/grafik kripto BTC", "Detaylı fiyat grafiği"),
+            ("/tara kripto", "Yükselen / düşenler"),
+            ("/fng", "Fear & Greed göstergesi"),
+        ],
+        "accent": "#F7A34D",
+    },
+    "portfolio": {
+        "title": "PORTFÖY",
+        "message": "Önce işlem kaydedin, ardından /portfoy komutuyla sanal portföyünüzün güncel değerini ve kâr/zararını görün.",
+        "commands": [
+            ("/portfoy", "Portföy özeti"),
+            ("/portfoy al hisse THYAO 10 300", "Alım kaydı"),
+            ("/portfoy sat kripto BTC 0.1 65000", "Satış kaydı"),
+            ("/portfoy", "Güncel değer ve K/Z"),
+        ],
+        "accent": "#F3C76B",
+    },
+    "alerts": {
+        "title": "ALARMLAR",
+        "message": "Bir fiyat veya yüzde değişim eşiği belirleyin. Alarm aktif olduğunda NEXA kontrol döngüsünde size bildirim gönderir.",
+        "commands": [
+            ("/alarm ekle hisse THYAO ust 350", "Fiyat üstü alarmı"),
+            ("/alarm ekle kripto BTC degisim 5", "%5 değişim alarmı"),
+            ("/alarm liste", "Aktif alarmları gör"),
+            ("/alarm sil 12", "Alarmı pasifleştir"),
+        ],
+        "accent": "#F3C76B",
+    },
+    "watchlist": {
+        "title": "İZLEME LİSTESİ",
+        "message": "Takip etmek istediğiniz hisse ve coinleri ekleyin. Listeyi tek komutla görüntüleyebilir veya sembolü silebilirsiniz.",
+        "commands": [
+            ("/izleme ekle hisse THYAO", "Hisse ekle"),
+            ("/izleme ekle kripto BTC", "Coin ekle"),
+            ("/izleme liste", "Listenizi görüntüle"),
+            ("/izleme sil hisse THYAO", "Sembolü kaldır"),
+        ],
+        "accent": "#5BD7F4",
+    },
+}
+
+
 async def configure_command_menu(bot: Any) -> bool:
     """Telegram mesaj kutusunda / yazılınca görünen NEXA komut menüsünü kurar."""
     try:
@@ -115,6 +176,20 @@ def back_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("Ana menü", callback_data="menu:home")]]
     )
+
+
+def guide_keyboard(key: str) -> InlineKeyboardMarkup:
+    """Bölüm kartında ilgili bölümlere ve ana menüye hızlı geçiş sağlar."""
+    related = {
+        "stock": [("Kripto", "crypto"), ("Teknik", "help")],
+        "crypto": [("BIST Hisse", "stock"), ("Fear & Greed", "help")],
+        "portfolio": [("Alarmlar", "alerts"), ("İzleme Listesi", "watchlist")],
+        "alerts": [("Portföy", "portfolio"), ("İzleme Listesi", "watchlist")],
+        "watchlist": [("Portföy", "portfolio"), ("Alarmlar", "alerts")],
+    }.get(key, [])
+    rows = [[InlineKeyboardButton(label, callback_data=f"menu:{target}") for label, target in related]]
+    rows.append([InlineKeyboardButton("Yardım", callback_data="menu:help"), InlineKeyboardButton("Ana menü", callback_data="menu:home")])
+    return InlineKeyboardMarkup(rows)
 
 
 async def _reply_card(
@@ -644,10 +719,27 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         )
         return
 
+    guide = MENU_GUIDES.get(key)
+    if guide:
+        await _reply_card(
+            query.message,
+            lambda output_dir: save_notice_card(
+                guide["title"],
+                guide["message"],
+                output_dir,
+                slug=f"menu_{key}",
+                accent=guide["accent"],
+                commands=guide["commands"],
+            ),
+            caption=f"NEXA | {guide['title']}",
+            reply_markup=guide_keyboard(key),
+        )
+        return
+
     label = MENU_LABELS.get(key, "NEXA")
     await _reply_card(
         query.message,
-        lambda output_dir: save_notice_card(label.upper(), f"Bu bölüm için ilgili komutları kullanabilirsiniz. /yardim ile tüm komutları görün.", output_dir, slug=f"menu_{key}"),
+        lambda output_dir: save_notice_card(label.upper(), "/yardim ile tüm komutları ve örnek kullanımları görebilirsiniz.", output_dir, slug=f"menu_{key}"),
         caption=f"NEXA | {label}",
         reply_markup=back_keyboard(),
     )

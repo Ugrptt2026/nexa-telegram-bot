@@ -881,10 +881,33 @@ def save_kap_card(items: list[Any], output_dir: Path) -> Path:
     return _save(image, output_dir, "kap_card")
 
 
-def save_notice_card(title: str, message: str, output_dir: Path, slug: str = "notice_card", accent: str = GREEN) -> Path:
-    image, draw, y = _base(title, "NEXA bilgi kartı", height=720)
-    _panel(draw, (56, y, WIDTH - 56, y + 220), fill=PANEL_ALT)
-    draw.rectangle((56, y, 70, y + 220), fill=accent)
-    _draw_wrapped(draw, (102, y + 38), message, _font(28, bold=True), TEXT, WIDTH - 168, line_gap=10)
-    _footer(draw, 720, "NEXA")
+def save_notice_card(
+    title: str,
+    message: str,
+    output_dir: Path,
+    slug: str = "notice_card",
+    accent: str = GREEN,
+    commands: list[tuple[str, str]] | None = None,
+) -> Path:
+    """Bölüm yönlendirmesi ve örnek komutları birlikte gösteren mobil bilgi kartı."""
+    command_rows = commands or []
+    height = 720 + min(len(command_rows), 6) * 78
+    image, draw, y = _base(title, "NEXA bilgi kartı", height=height)
+    message_height = 196 if command_rows else 220
+    _panel(draw, (56, y, WIDTH - 56, y + message_height), fill=PANEL_ALT)
+    draw.rectangle((56, y, 70, y + message_height), fill=accent)
+    _draw_wrapped(draw, (102, y + 32), message, _font(26, bold=True), TEXT, WIDTH - 168, line_gap=9)
+    y += message_height + 28
+    if command_rows:
+        draw.text((56, y), "NE YAPABİLİRSİNİZ?", font=_font(23, bold=True), fill=GREEN)
+        y += 44
+        for command, description in command_rows[:6]:
+            row_height = 62
+            draw.rounded_rectangle((56, y, WIDTH - 56, y + row_height), radius=17, fill=PANEL, outline=BORDER, width=2)
+            draw.text((82, y + 9), command, font=_font(22, bold=True), fill=TEXT)
+            desc_font = _font(17)
+            desc_width = _text_width(draw, description, desc_font)
+            draw.text((WIDTH - 82 - desc_width, y + 22), description, font=desc_font, fill=MUTED)
+            y += row_height + 16
+    _footer(draw, height, "NEXA")
     return _save(image, output_dir, slug)

@@ -29,3 +29,7 @@ THYAO kartı gerçek testte açılış 309,50, gün içi yüksek 311,00, düşü
 ## Final gerçek veri kontrolü
 
 Final sürümde gerçek Yahoo Finance THYAO ve Binance/CoinGecko BTC kartları tekrar üretildi ve görsel olarak incelendi. `FİYAT AKIŞI` bölümü kaybolmadan görünür; yeşil/kırmızı dolu gövdeli mumlar, ince fitiller, son mumun değer balonu, `1G/1H/1A/1Y` sekmeleri ve trend ikonu çalışıyor. Hisse kartında `BIST · AÇIK`, kripto kartında `7/24 AKTİF` rozeti ve iki farklı 24S/52H aralık etiketi doğru.
+
+## Menü rehber kartları kontrolü
+
+`guide_stock.png` ve `guide_crypto.png` önizlemeleri 1080×1110 portre formatında incelendi. Her iki kartta da kısa açıklama, `NE YAPABİLİRSİNİZ?` bölümü, beş adede kadar gerçek komut örneği ve karşılarında ne işe yaradığını anlatan açıklamalar mobilde okunaklı görünüyor. BIST kartı fiyat, teknik, temel, grafik ve endeks adımlarını; Kripto kartı fiyat, teknik, grafik, tarama ve Fear & Greed adımlarını gösteriyor.

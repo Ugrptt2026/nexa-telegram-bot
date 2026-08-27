@@ -7,13 +7,7 @@ import pandas as pd
 
 from nexa.providers import Quote
 from nexa.technical_analysis import TechnicalSnapshot
-from nexa.visual_cards import (
-    save_help_card,
-    save_portfolio_card,
-    save_quote_card,
-    save_start_card,
-    save_technical_card,
-)
+from nexa.visual_cards import save_help_card, save_notice_card, save_portfolio_card, save_quote_card, save_start_card, save_technical_card
 
 OUTPUT = Path(__file__).resolve().parents[1] / "docs" / "previews"
 
@@ -59,12 +53,18 @@ def main() -> None:
         "volume_24h_usd": 24_600_000_000,
         "change_24h_pct": 1.35,
     }
+    guide_commands = {
+        "stock": [("/hisse THYAO", "Fiyat + mum kartı"), ("/teknik hisse THYAO", "RSI, MACD, seviyeler"), ("/temel THYAO", "F/K, PD/DD, temettü"), ("/grafik hisse THYAO", "Detaylı fiyat grafiği"), ("/endeks XU100", "BIST 100 görünümü")],
+        "crypto": [("/kripto BTC", "Fiyat + mum kartı"), ("/teknik kripto BTC", "RSI, MACD, seviyeler"), ("/grafik kripto BTC", "Detaylı fiyat grafiği"), ("/tara kripto", "Yükselen / düşenler"), ("/fng", "Fear & Greed göstergesi")],
+    }
     technical = TechnicalSnapshot(55.2, 1.2, 0.8, 150.0, 140.0, 120.0, 170.0)
     position = {"asset_type": "stock", "symbol": "THYAO", "quantity": 10.0, "cost": 1_200.0, "currency": "TRY"}
 
     paths = [
         save_start_card("Ugrptt", OUTPUT),
         save_help_card(OUTPUT),
+        save_notice_card("BIST HİSSE", "Bir hisse kodu yazarak başlayın. Komutu mesaj alanına gönderdiğinizde NEXA fiyat ve analiz kartını hazırlar.", OUTPUT, slug="guide_stock", accent="#57E389", commands=guide_commands["stock"]),
+        save_notice_card("KRİPTO", "Coin sembolünü yazarak başlayın. BTC, ETH gibi sembollerle fiyat, mum grafik ve piyasa görünümünü açabilirsiniz.", OUTPUT, slug="guide_crypto", accent="#F7A34D", commands=guide_commands["crypto"]),
         save_quote_card(quote, OUTPUT, snapshot=snapshot, ohlcv=ohlcv),
         save_quote_card(crypto_quote, OUTPUT, snapshot=crypto_snapshot, ohlcv=ohlcv),
         save_technical_card("THYAO", technical, OUTPUT, last_price=164.0, source="NEXA ücretsiz veri katmanı"),
