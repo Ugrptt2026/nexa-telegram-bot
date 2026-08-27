@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: nexa-telegram-bot
+    runtime: python
+    plan: free
+    buildCommand: unzip -q nexa-deploy.zip -d .nexa-src && pip install ./.nexa-src
+    startCommand: cd .nexa-src && uvicorn nexa.web:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+      - key: COINGECKO_DEMO_API_KEY
+        sync: false
+      - key: ENABLE_INTERNAL_SCHEDULER
+        value: "false"
+      - key: ALARM_CHECK_INTERVAL_SECONDS
+        value: "60"
+      - key: DATABASE_PATH
+        value: "/tmp/nexa.sqlite3"
+      - key: LOG_LEVEL
+        value: "INFO"

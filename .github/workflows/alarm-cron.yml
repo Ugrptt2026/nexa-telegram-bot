@@ -1,0 +1,22 @@
+name: Nexa alarm checker
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/5 * * * *"
+
+jobs:
+  check-alarms:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Nexa alarm check
+        env:
+          NEXA_URL: ${{ secrets.NEXA_URL }}
+          CRON_SECRET: ${{ secrets.NEXA_CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          test -n "$NEXA_URL"
+          test -n "$CRON_SECRET"
+          curl --fail-with-body --silent --show-error \
+            --request POST "$NEXA_URL/internal/cron" \
+            --header "X-Cron-Secret: $CRON_SECRET"
