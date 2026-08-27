@@ -36,7 +36,7 @@ class VolumeProfile:
     latest_vs_average_pct: float | None
     zones: tuple[VolumeZone, ...]
     recent_bars: tuple[VolumeBar, ...]
-    note: str = "OHLCV hacim analizi; gerçek emir defteri değildir."
+    note: str = "OHLCV ANALİZ VERİSİ"
 
 
 def _numeric(frame: pd.DataFrame, column: str) -> pd.Series:
